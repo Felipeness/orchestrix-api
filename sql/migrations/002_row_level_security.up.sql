@@ -1,11 +1,16 @@
 -- Enable Row Level Security for multi-tenancy
 
--- Enable RLS on tables
+-- Enable RLS on tables (FORCE ensures RLS applies even to table owner)
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE users FORCE ROW LEVEL SECURITY;
 ALTER TABLE workflows ENABLE ROW LEVEL SECURITY;
+ALTER TABLE workflows FORCE ROW LEVEL SECURITY;
 ALTER TABLE executions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE executions FORCE ROW LEVEL SECURITY;
 ALTER TABLE audit_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE audit_logs FORCE ROW LEVEL SECURITY;
 ALTER TABLE alerts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE alerts FORCE ROW LEVEL SECURITY;
 
 -- Create app user for RLS (not superuser)
 DO $$
@@ -58,6 +63,33 @@ CREATE POLICY tenant_isolation_tenants ON tenants
     USING (id = current_setting('app.current_tenant_id', true)::uuid);
 
 ALTER TABLE tenants ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tenants FORCE ROW LEVEL SECURITY;
+
+-- Superuser bypass policies (for migrations and admin operations)
+-- These allow superusers to access all data when needed
+CREATE POLICY superuser_bypass_users ON users
+    FOR ALL TO postgres
+    USING (true) WITH CHECK (true);
+
+CREATE POLICY superuser_bypass_workflows ON workflows
+    FOR ALL TO postgres
+    USING (true) WITH CHECK (true);
+
+CREATE POLICY superuser_bypass_executions ON executions
+    FOR ALL TO postgres
+    USING (true) WITH CHECK (true);
+
+CREATE POLICY superuser_bypass_audit_logs ON audit_logs
+    FOR ALL TO postgres
+    USING (true) WITH CHECK (true);
+
+CREATE POLICY superuser_bypass_alerts ON alerts
+    FOR ALL TO postgres
+    USING (true) WITH CHECK (true);
+
+CREATE POLICY superuser_bypass_tenants ON tenants
+    FOR ALL TO postgres
+    USING (true) WITH CHECK (true);
 
 -- Function to set tenant context
 CREATE OR REPLACE FUNCTION set_tenant_context(p_tenant_id UUID)
