@@ -14,6 +14,8 @@ import (
 	"github.com/go-chi/cors"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/orchestrix/orchestrix-api/internal/alert"
+	"github.com/orchestrix/orchestrix-api/internal/audit"
 	"github.com/orchestrix/orchestrix-api/internal/auth"
 	"github.com/orchestrix/orchestrix-api/internal/execution"
 	"github.com/orchestrix/orchestrix-api/internal/workflow"
@@ -59,6 +61,8 @@ func main() {
 	// Handlers
 	workflowHandler := workflow.NewHandler(pool)
 	executionHandler := execution.NewHandler(pool)
+	alertHandler := alert.NewHandler(pool)
+	auditHandler := audit.NewHandler(pool)
 
 	r := chi.NewRouter()
 
@@ -110,6 +114,12 @@ func main() {
 
 			// Execution routes
 			r.Mount("/executions", executionHandler.Routes())
+
+			// Alert routes
+			r.Mount("/alerts", alertHandler.Routes())
+
+			// Audit log routes
+			r.Mount("/audit-logs", auditHandler.Routes())
 		})
 	})
 

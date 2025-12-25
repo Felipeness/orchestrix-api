@@ -13,6 +13,7 @@ import (
 type Querier interface {
 	AcknowledgeAlert(ctx context.Context, arg AcknowledgeAlertParams) (Alert, error)
 	CompleteExecution(ctx context.Context, arg CompleteExecutionParams) (Execution, error)
+	CountAlerts(ctx context.Context, tenantID uuid.UUID) (int64, error)
 	CountAlertsByStatus(ctx context.Context, arg CountAlertsByStatusParams) (int64, error)
 	CountAuditLogsByTenant(ctx context.Context, tenantID uuid.UUID) (int64, error)
 	CountExecutions(ctx context.Context, tenantID uuid.UUID) (int64, error)

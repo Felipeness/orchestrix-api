@@ -48,6 +48,9 @@ SET status = 'resolved', resolved_at = NOW(), resolved_by = $2
 WHERE id = $1
 RETURNING *;
 
+-- name: CountAlerts :one
+SELECT COUNT(*) FROM alerts WHERE tenant_id = $1;
+
 -- name: CountAlertsByStatus :one
 SELECT COUNT(*) FROM alerts WHERE tenant_id = $1 AND status = $2;
 

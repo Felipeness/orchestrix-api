@@ -45,6 +45,17 @@ func (q *Queries) AcknowledgeAlert(ctx context.Context, arg AcknowledgeAlertPara
 	return i, err
 }
 
+const countAlerts = `-- name: CountAlerts :one
+SELECT COUNT(*) FROM alerts WHERE tenant_id = $1
+`
+
+func (q *Queries) CountAlerts(ctx context.Context, tenantID uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countAlerts, tenantID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countAlertsByStatus = `-- name: CountAlertsByStatus :one
 SELECT COUNT(*) FROM alerts WHERE tenant_id = $1 AND status = $2
 `
