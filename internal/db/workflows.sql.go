@@ -13,6 +13,17 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countWorkflows = `-- name: CountWorkflows :one
+SELECT COUNT(*) FROM workflows WHERE tenant_id = $1
+`
+
+func (q *Queries) CountWorkflows(ctx context.Context, tenantID uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countWorkflows, tenantID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countWorkflowsByStatus = `-- name: CountWorkflowsByStatus :one
 SELECT COUNT(*) FROM workflows WHERE tenant_id = $1 AND status = $2
 `
@@ -24,17 +35,6 @@ type CountWorkflowsByStatusParams struct {
 
 func (q *Queries) CountWorkflowsByStatus(ctx context.Context, arg CountWorkflowsByStatusParams) (int64, error) {
 	row := q.db.QueryRow(ctx, countWorkflowsByStatus, arg.TenantID, arg.Status)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
-const countWorkflowsByTenant = `-- name: CountWorkflowsByTenant :one
-SELECT COUNT(*) FROM workflows WHERE tenant_id = $1
-`
-
-func (q *Queries) CountWorkflowsByTenant(ctx context.Context, tenantID uuid.UUID) (int64, error) {
-	row := q.db.QueryRow(ctx, countWorkflowsByTenant, tenantID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err

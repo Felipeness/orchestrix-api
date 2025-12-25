@@ -51,8 +51,13 @@ SET status = 'failed', error = $2, completed_at = NOW()
 WHERE id = $1
 RETURNING *;
 
--- name: CountExecutionsByTenant :one
+-- name: CountExecutions :one
 SELECT COUNT(*) FROM executions WHERE tenant_id = $1;
+
+-- name: UpdateExecutionTemporalIDs :exec
+UPDATE executions
+SET temporal_workflow_id = $2, temporal_run_id = $3
+WHERE id = $1;
 
 -- name: CountExecutionsByStatus :one
 SELECT COUNT(*) FROM executions WHERE tenant_id = $1 AND status = $2;

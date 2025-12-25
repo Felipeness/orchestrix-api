@@ -47,6 +47,17 @@ func (q *Queries) CompleteExecution(ctx context.Context, arg CompleteExecutionPa
 	return i, err
 }
 
+const countExecutions = `-- name: CountExecutions :one
+SELECT COUNT(*) FROM executions WHERE tenant_id = $1
+`
+
+func (q *Queries) CountExecutions(ctx context.Context, tenantID uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countExecutions, tenantID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countExecutionsByStatus = `-- name: CountExecutionsByStatus :one
 SELECT COUNT(*) FROM executions WHERE tenant_id = $1 AND status = $2
 `
@@ -58,17 +69,6 @@ type CountExecutionsByStatusParams struct {
 
 func (q *Queries) CountExecutionsByStatus(ctx context.Context, arg CountExecutionsByStatusParams) (int64, error) {
 	row := q.db.QueryRow(ctx, countExecutionsByStatus, arg.TenantID, arg.Status)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
-const countExecutionsByTenant = `-- name: CountExecutionsByTenant :one
-SELECT COUNT(*) FROM executions WHERE tenant_id = $1
-`
-
-func (q *Queries) CountExecutionsByTenant(ctx context.Context, tenantID uuid.UUID) (int64, error) {
-	row := q.db.QueryRow(ctx, countExecutionsByTenant, tenantID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -467,4 +467,21 @@ func (q *Queries) UpdateExecutionStatus(ctx context.Context, arg UpdateExecution
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const updateExecutionTemporalIDs = `-- name: UpdateExecutionTemporalIDs :exec
+UPDATE executions
+SET temporal_workflow_id = $2, temporal_run_id = $3
+WHERE id = $1
+`
+
+type UpdateExecutionTemporalIDsParams struct {
+	ID                 uuid.UUID `db:"id" json:"id"`
+	TemporalWorkflowID *string   `db:"temporal_workflow_id" json:"temporal_workflow_id"`
+	TemporalRunID      *string   `db:"temporal_run_id" json:"temporal_run_id"`
+}
+
+func (q *Queries) UpdateExecutionTemporalIDs(ctx context.Context, arg UpdateExecutionTemporalIDsParams) error {
+	_, err := q.db.Exec(ctx, updateExecutionTemporalIDs, arg.ID, arg.TemporalWorkflowID, arg.TemporalRunID)
+	return err
 }

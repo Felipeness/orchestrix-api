@@ -33,7 +33,7 @@ RETURNING *;
 -- name: DeleteWorkflow :exec
 DELETE FROM workflows WHERE id = $1;
 
--- name: CountWorkflowsByTenant :one
+-- name: CountWorkflows :one
 SELECT COUNT(*) FROM workflows WHERE tenant_id = $1;
 
 -- name: CountWorkflowsByStatus :one
