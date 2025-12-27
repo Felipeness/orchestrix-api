@@ -52,7 +52,7 @@ func main() {
 		KeycloakURL: getEnv("KEYCLOAK_URL", "http://localhost:8180"),
 		Realm:       getEnv("KEYCLOAK_REALM", "orchestrix"),
 		ClientID:    getEnv("KEYCLOAK_CLIENT_ID", "orchestrix-api"),
-		SkipPaths:   []string{"/health", "/api/v1"},
+		SkipPaths:   []string{"/health"},
 	})
 
 	// Tenant middleware

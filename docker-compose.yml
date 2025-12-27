@@ -9,8 +9,12 @@ services:
       - PORT=8080
       - TEMPORAL_HOST=temporal:7233
       - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/orchestrix?sslmode=disable
-      - KEYCLOAK_URL=http://keycloak:8080
+      - KEYCLOAK_URL=http://host.docker.internal:8180
+      - KEYCLOAK_ISSUER_URL=http://localhost:8180
       - KEYCLOAK_REALM=orchestrix
+      - KEYCLOAK_CLIENT_ID=orchestrix-web
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       - postgres
       - temporal

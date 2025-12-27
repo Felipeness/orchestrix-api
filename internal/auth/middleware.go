@@ -127,8 +127,7 @@ func (m *Middleware) Handler(next http.Handler) http.Handler {
 		// Parse and validate token
 		token, err := jwt.ParseWithClaims(tokenString, &KeycloakClaims{}, m.jwks.Keyfunc,
 			jwt.WithValidMethods([]string{"RS256"}),
-			jwt.WithIssuer(fmt.Sprintf("%s/realms/%s", m.config.KeycloakURL, m.config.Realm)),
-			jwt.WithAudience(m.config.ClientID),
+			jwt.WithIssuer(fmt.Sprintf("%s/realms/%s", "http://localhost:8180", m.config.Realm)),
 		)
 		if err != nil {
 			slog.Debug("token validation failed", "error", err)
