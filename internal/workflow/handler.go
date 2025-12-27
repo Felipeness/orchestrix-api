@@ -422,10 +422,41 @@ func (h *Handler) Execute(w http.ResponseWriter, r *http.Request) {
 		Status: "running",
 	})
 
+	// Start goroutine to wait for workflow completion and update status
+	go h.waitForWorkflowCompletion(execution.ID, run)
+
 	// Get updated execution
 	execution, _ = h.queries.GetExecution(ctx, execution.ID)
 
 	respondJSON(w, http.StatusAccepted, map[string]interface{}{"data": execution})
+}
+
+// waitForWorkflowCompletion waits for a Temporal workflow to complete and updates the execution status
+func (h *Handler) waitForWorkflowCompletion(executionID uuid.UUID, run temporal.WorkflowRun) {
+	ctx := context.Background()
+
+	var result ProcessWorkflowOutput
+	err := run.Get(ctx, &result)
+
+	if err != nil {
+		slog.Error("workflow execution failed", "execution_id", executionID, "error", err)
+		errStr := err.Error()
+		h.queries.FailExecution(ctx, db.FailExecutionParams{
+			ID:    executionID,
+			Error: &errStr,
+		})
+		return
+	}
+
+	// Marshal the result to JSON for storage
+	output, _ := json.Marshal(result)
+
+	slog.Info("workflow execution completed", "execution_id", executionID, "duration_ms", result.Duration)
+	h.queries.CompleteExecution(ctx, db.CompleteExecutionParams{
+		ID:     executionID,
+		Status: "completed",
+		Output: output,
+	})
 }
 
 // ListExecutions returns executions for a workflow

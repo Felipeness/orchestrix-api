@@ -10,6 +10,9 @@ import (
 	"go.temporal.io/sdk/client"
 )
 
+// WorkflowRun is an alias for the Temporal SDK WorkflowRun type
+type WorkflowRun = client.WorkflowRun
+
 var (
 	temporalClient client.Client
 	once           sync.Once
