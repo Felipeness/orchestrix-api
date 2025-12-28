@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -8,6 +9,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/orchestrix/orchestrix-api/internal/alertrule"
@@ -147,20 +149,20 @@ func (h *Handler) Ingest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Evaluate metric against alert rules (async to not block response)
+	// Use background context since request context will be cancelled
+	tenantID := user.TenantID
+	metricData := alertrule.MetricData{
+		Name:      req.Name,
+		Value:     req.Value,
+		Labels:    toInterfaceMap(req.Labels),
+		Source:    req.Source,
+		Timestamp: timestamp,
+	}
 	go func() {
-		labelsMap := make(map[string]interface{})
-		for k, v := range req.Labels {
-			labelsMap[k] = v
-		}
-		metricData := alertrule.MetricData{
-			Name:      req.Name,
-			Value:     req.Value,
-			Labels:    labelsMap,
-			Source:    req.Source,
-			Timestamp: timestamp,
-		}
-		if err := h.evaluator.EvaluateMetric(ctx, user.TenantID, metricData); err != nil {
-			slog.Error("failed to evaluate metric", "error", err, "metric", req.Name)
+		evalCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := h.evaluator.EvaluateMetric(evalCtx, tenantID, metricData); err != nil {
+			slog.Error("failed to evaluate metric", "error", err, "metric", metricData.Name)
 		}
 	}()
 
@@ -215,25 +217,21 @@ func (h *Handler) IngestBatch(w http.ResponseWriter, r *http.Request) {
 		}
 		inserted++
 
-		// Evaluate metric against alert rules (async)
-		metricCopy := m
-		tsCopy := timestamp
-		go func() {
-			labelsMap := make(map[string]interface{})
-			for k, v := range metricCopy.Labels {
-				labelsMap[k] = v
+		// Evaluate metric against alert rules (async with fresh context)
+		metricData := alertrule.MetricData{
+			Name:      m.Name,
+			Value:     m.Value,
+			Labels:    toInterfaceMap(m.Labels),
+			Source:    m.Source,
+			Timestamp: timestamp,
+		}
+		go func(md alertrule.MetricData, tid uuid.UUID) {
+			evalCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			if err := h.evaluator.EvaluateMetric(evalCtx, tid, md); err != nil {
+				slog.Error("failed to evaluate metric", "error", err, "metric", md.Name)
 			}
-			metricData := alertrule.MetricData{
-				Name:      metricCopy.Name,
-				Value:     metricCopy.Value,
-				Labels:    labelsMap,
-				Source:    metricCopy.Source,
-				Timestamp: tsCopy,
-			}
-			if err := h.evaluator.EvaluateMetric(ctx, user.TenantID, metricData); err != nil {
-				slog.Error("failed to evaluate metric", "error", err, "metric", metricCopy.Name)
-			}
-		}()
+		}(metricData, user.TenantID)
 	}
 
 	slog.Info("batch metrics ingested", "total", len(req.Metrics), "inserted", inserted)
@@ -549,4 +547,12 @@ func floatFromInterface(v interface{}) float64 {
 	default:
 		return 0
 	}
+}
+
+func toInterfaceMap(m map[string]string) map[string]interface{} {
+	result := make(map[string]interface{}, len(m))
+	for k, v := range m {
+		result[k] = v
+	}
+	return result
 }

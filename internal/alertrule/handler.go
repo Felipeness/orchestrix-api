@@ -144,6 +144,16 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Validate operator if condition_type is metric_threshold
+	if req.ConditionType == "metric_threshold" {
+		if op, ok := req.ConditionConfig["operator"].(string); ok {
+			if _, valid := operators[op]; !valid {
+				respondError(w, http.StatusBadRequest, "invalid operator, must be one of: gt, gte, lt, lte, eq, ne")
+				return
+			}
+		}
+	}
+
 	enabled := true
 	if req.Enabled != nil {
 		enabled = *req.Enabled

@@ -33,6 +33,28 @@ type ThresholdCondition struct {
 	Threshold  float64 `json:"threshold"`
 }
 
+// CompareFunc defines a comparison function type
+type CompareFunc func(value, threshold float64) bool
+
+// operators maps operator strings to comparison functions
+var operators = map[string]CompareFunc{
+	"gt":  func(v, t float64) bool { return v > t },
+	"gte": func(v, t float64) bool { return v >= t },
+	"lt":  func(v, t float64) bool { return v < t },
+	"lte": func(v, t float64) bool { return v <= t },
+	"eq":  func(v, t float64) bool { return v == t },
+	"ne":  func(v, t float64) bool { return v != t },
+}
+
+// ValidOperators returns the list of valid operator names
+func ValidOperators() []string {
+	keys := make([]string, 0, len(operators))
+	for k := range operators {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
 // Evaluator evaluates alert rules against metrics
 type Evaluator struct {
 	queries *db.Queries
@@ -77,35 +99,25 @@ func (e *Evaluator) EvaluateMetric(ctx context.Context, tenantID uuid.UUID, metr
 }
 
 // evaluateRule checks if a metric triggers a specific rule
-func (e *Evaluator) evaluateRule(ctx context.Context, rule db.AlertRule, metric MetricData) (bool, error) {
+func (e *Evaluator) evaluateRule(_ context.Context, rule db.AlertRule, metric MetricData) (bool, error) {
 	var condition ThresholdCondition
 	if err := json.Unmarshal(rule.ConditionConfig, &condition); err != nil {
 		return false, err
 	}
 
-	// Check if metric name matches
+	// Early return: metric name must match
 	if condition.MetricName != metric.Name {
 		return false, nil
 	}
 
-	// Evaluate threshold condition
-	switch condition.Operator {
-	case "gt":
-		return metric.Value > condition.Threshold, nil
-	case "gte":
-		return metric.Value >= condition.Threshold, nil
-	case "lt":
-		return metric.Value < condition.Threshold, nil
-	case "lte":
-		return metric.Value <= condition.Threshold, nil
-	case "eq":
-		return metric.Value == condition.Threshold, nil
-	case "ne":
-		return metric.Value != condition.Threshold, nil
-	default:
-		slog.Warn("unknown operator", "operator", condition.Operator)
+	// Lookup operator function
+	compareFn, ok := operators[condition.Operator]
+	if !ok {
+		slog.Warn("unknown operator", "operator", condition.Operator, "valid", ValidOperators())
 		return false, nil
 	}
+
+	return compareFn(metric.Value, condition.Threshold), nil
 }
 
 // triggerAlert creates an alert and optionally triggers a workflow
