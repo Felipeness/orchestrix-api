@@ -383,20 +383,47 @@ func (h *Handler) Execute(w http.ResponseWriter, r *http.Request) {
 
 	// Start Temporal workflow
 	temporalWorkflowID := fmt.Sprintf("orchestrix-%s-%s", workflowID.String(), execution.ID.String())
-	params := make(map[string]string)
-	for k, v := range req.Input {
-		if s, ok := v.(string); ok {
-			params[k] = s
+
+	// Check if workflow has a valid definition with steps
+	hasDynamicDefinition := false
+	if len(wf.Definition) > 0 {
+		var def map[string]interface{}
+		if err := json.Unmarshal(wf.Definition, &def); err == nil {
+			if steps, ok := def["steps"]; ok {
+				if stepsArr, ok := steps.([]interface{}); ok && len(stepsArr) > 0 {
+					hasDynamicDefinition = true
+				}
+			}
 		}
 	}
 
-	workflowInput := ProcessWorkflowInput{
-		ID:     execution.ID.String(),
-		Name:   wf.Name,
-		Params: params,
-	}
+	var run temporal.WorkflowRun
 
-	run, err := temporal.ExecuteWorkflow(ctx, temporalWorkflowID, ProcessWorkflow, workflowInput)
+	if hasDynamicDefinition {
+		// Use DynamicWorkflow for definition-based execution
+		workflowInput := DynamicWorkflowInput{
+			ExecutionID: execution.ID.String(),
+			WorkflowID:  workflowID.String(),
+			Name:        wf.Name,
+			Definition:  wf.Definition,
+			Input:       req.Input,
+		}
+		run, err = temporal.ExecuteWorkflow(ctx, temporalWorkflowID, DynamicWorkflow, workflowInput)
+	} else {
+		// Fallback to ProcessWorkflow for simple workflows
+		params := make(map[string]string)
+		for k, v := range req.Input {
+			if s, ok := v.(string); ok {
+				params[k] = s
+			}
+		}
+		workflowInput := ProcessWorkflowInput{
+			ID:     execution.ID.String(),
+			Name:   wf.Name,
+			Params: params,
+		}
+		run, err = temporal.ExecuteWorkflow(ctx, temporalWorkflowID, ProcessWorkflow, workflowInput)
+	}
 	if err != nil {
 		slog.Error("failed to start workflow", "error", err)
 		// Update execution status to failed

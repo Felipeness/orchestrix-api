@@ -49,9 +49,10 @@ func main() {
 
 	// Register workflows
 	w.RegisterWorkflow(workflow.ProcessWorkflow)
+	w.RegisterWorkflow(workflow.DynamicWorkflow)
 
 	// Register activities
-	activities := &activity.Activities{}
+	activities := activity.NewActivities()
 	w.RegisterActivity(activities)
 
 	// Start worker
