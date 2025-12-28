@@ -18,6 +18,7 @@ import (
 	"github.com/orchestrix/orchestrix-api/internal/audit"
 	"github.com/orchestrix/orchestrix-api/internal/auth"
 	"github.com/orchestrix/orchestrix-api/internal/execution"
+	"github.com/orchestrix/orchestrix-api/internal/metrics"
 	"github.com/orchestrix/orchestrix-api/internal/workflow"
 	"github.com/orchestrix/orchestrix-api/pkg/temporal"
 )
@@ -63,6 +64,7 @@ func main() {
 	executionHandler := execution.NewHandler(pool)
 	alertHandler := alert.NewHandler(pool)
 	auditHandler := audit.NewHandler(pool)
+	metricsHandler := metrics.NewHandler(pool)
 
 	r := chi.NewRouter()
 
@@ -120,6 +122,9 @@ func main() {
 
 			// Audit log routes
 			r.Mount("/audit-logs", auditHandler.Routes())
+
+			// Metrics routes (observability)
+			r.Mount("/metrics", metricsHandler.Routes())
 		})
 	})
 

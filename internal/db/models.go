@@ -60,6 +60,31 @@ type Execution struct {
 	CreatedAt          time.Time          `db:"created_at" json:"created_at"`
 }
 
+type Metric struct {
+	ID        uuid.UUID `db:"id" json:"id"`
+	TenantID  uuid.UUID `db:"tenant_id" json:"tenant_id"`
+	Name      string    `db:"name" json:"name"`
+	Value     float64   `db:"value" json:"value"`
+	Labels    []byte    `db:"labels" json:"labels"`
+	Source    *string   `db:"source" json:"source"`
+	Timestamp time.Time `db:"timestamp" json:"timestamp"`
+	CreatedAt time.Time `db:"created_at" json:"created_at"`
+}
+
+type MetricDefinition struct {
+	ID             uuid.UUID `db:"id" json:"id"`
+	TenantID       uuid.UUID `db:"tenant_id" json:"tenant_id"`
+	Name           string    `db:"name" json:"name"`
+	DisplayName    *string   `db:"display_name" json:"display_name"`
+	Description    *string   `db:"description" json:"description"`
+	Unit           *string   `db:"unit" json:"unit"`
+	Type           string    `db:"type" json:"type"`
+	Aggregation    *string   `db:"aggregation" json:"aggregation"`
+	AlertThreshold []byte    `db:"alert_threshold" json:"alert_threshold"`
+	CreatedAt      time.Time `db:"created_at" json:"created_at"`
+	UpdatedAt      time.Time `db:"updated_at" json:"updated_at"`
+}
+
 type Tenant struct {
 	ID        uuid.UUID `db:"id" json:"id"`
 	Name      string    `db:"name" json:"name"`

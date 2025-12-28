@@ -26,9 +26,13 @@ type Querier interface {
 	CreateAlert(ctx context.Context, arg CreateAlertParams) (Alert, error)
 	CreateAuditLog(ctx context.Context, arg CreateAuditLogParams) (AuditLog, error)
 	CreateExecution(ctx context.Context, arg CreateExecutionParams) (Execution, error)
+	// Metric Definitions
+	CreateMetricDefinition(ctx context.Context, arg CreateMetricDefinitionParams) (MetricDefinition, error)
 	CreateTenant(ctx context.Context, arg CreateTenantParams) (Tenant, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	CreateWorkflow(ctx context.Context, arg CreateWorkflowParams) (Workflow, error)
+	DeleteMetricDefinition(ctx context.Context, arg DeleteMetricDefinitionParams) error
+	DeleteOldMetrics(ctx context.Context, arg DeleteOldMetricsParams) error
 	DeleteTenant(ctx context.Context, id uuid.UUID) error
 	DeleteUser(ctx context.Context, id uuid.UUID) error
 	DeleteWorkflow(ctx context.Context, id uuid.UUID) error
@@ -37,6 +41,12 @@ type Querier interface {
 	GetExecution(ctx context.Context, id uuid.UUID) (Execution, error)
 	GetExecutionByTemporalID(ctx context.Context, temporalWorkflowID *string) (Execution, error)
 	GetExecutionStats(ctx context.Context, arg GetExecutionStatsParams) (GetExecutionStatsRow, error)
+	GetLatestMetric(ctx context.Context, arg GetLatestMetricParams) (Metric, error)
+	GetMetricDefinition(ctx context.Context, arg GetMetricDefinitionParams) (MetricDefinition, error)
+	GetMetricNames(ctx context.Context, tenantID uuid.UUID) ([]string, error)
+	GetMetrics(ctx context.Context, arg GetMetricsParams) ([]Metric, error)
+	GetMetricsAggregate(ctx context.Context, arg GetMetricsAggregateParams) (GetMetricsAggregateRow, error)
+	GetMetricsByLabels(ctx context.Context, arg GetMetricsByLabelsParams) ([]Metric, error)
 	GetScheduledWorkflows(ctx context.Context) ([]Workflow, error)
 	GetTenant(ctx context.Context, id uuid.UUID) (Tenant, error)
 	GetTenantBySlug(ctx context.Context, slug string) (Tenant, error)
@@ -44,6 +54,8 @@ type Querier interface {
 	GetUserByEmail(ctx context.Context, arg GetUserByEmailParams) (User, error)
 	GetUserByExternalID(ctx context.Context, arg GetUserByExternalIDParams) (User, error)
 	GetWorkflow(ctx context.Context, id uuid.UUID) (Workflow, error)
+	InsertMetric(ctx context.Context, arg InsertMetricParams) (Metric, error)
+	InsertMetricsBatch(ctx context.Context, arg []InsertMetricsBatchParams) (int64, error)
 	ListAlerts(ctx context.Context, arg ListAlertsParams) ([]Alert, error)
 	ListAlertsBySeverity(ctx context.Context, arg ListAlertsBySeverityParams) ([]Alert, error)
 	ListAlertsByStatus(ctx context.Context, arg ListAlertsByStatusParams) ([]Alert, error)
@@ -55,6 +67,7 @@ type Querier interface {
 	ListExecutions(ctx context.Context, arg ListExecutionsParams) ([]Execution, error)
 	ListExecutionsByStatus(ctx context.Context, arg ListExecutionsByStatusParams) ([]Execution, error)
 	ListExecutionsByWorkflow(ctx context.Context, arg ListExecutionsByWorkflowParams) ([]Execution, error)
+	ListMetricDefinitions(ctx context.Context, tenantID uuid.UUID) ([]MetricDefinition, error)
 	ListOpenAlerts(ctx context.Context, arg ListOpenAlertsParams) ([]Alert, error)
 	ListRecentExecutions(ctx context.Context, arg ListRecentExecutionsParams) ([]Execution, error)
 	ListTenants(ctx context.Context, arg ListTenantsParams) ([]Tenant, error)
