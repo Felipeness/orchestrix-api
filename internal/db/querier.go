@@ -13,6 +13,7 @@ import (
 type Querier interface {
 	AcknowledgeAlert(ctx context.Context, arg AcknowledgeAlertParams) (Alert, error)
 	CompleteExecution(ctx context.Context, arg CompleteExecutionParams) (Execution, error)
+	CountAlertRules(ctx context.Context, tenantID uuid.UUID) (int64, error)
 	CountAlerts(ctx context.Context, tenantID uuid.UUID) (int64, error)
 	CountAlertsByStatus(ctx context.Context, arg CountAlertsByStatusParams) (int64, error)
 	CountAuditLogsByTenant(ctx context.Context, tenantID uuid.UUID) (int64, error)
@@ -24,6 +25,7 @@ type Querier interface {
 	CountWorkflows(ctx context.Context, tenantID uuid.UUID) (int64, error)
 	CountWorkflowsByStatus(ctx context.Context, arg CountWorkflowsByStatusParams) (int64, error)
 	CreateAlert(ctx context.Context, arg CreateAlertParams) (Alert, error)
+	CreateAlertRule(ctx context.Context, arg CreateAlertRuleParams) (AlertRule, error)
 	CreateAuditLog(ctx context.Context, arg CreateAuditLogParams) (AuditLog, error)
 	CreateExecution(ctx context.Context, arg CreateExecutionParams) (Execution, error)
 	// Metric Definitions
@@ -31,6 +33,7 @@ type Querier interface {
 	CreateTenant(ctx context.Context, arg CreateTenantParams) (Tenant, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	CreateWorkflow(ctx context.Context, arg CreateWorkflowParams) (Workflow, error)
+	DeleteAlertRule(ctx context.Context, arg DeleteAlertRuleParams) error
 	DeleteMetricDefinition(ctx context.Context, arg DeleteMetricDefinitionParams) error
 	DeleteOldMetrics(ctx context.Context, arg DeleteOldMetricsParams) error
 	DeleteTenant(ctx context.Context, id uuid.UUID) error
@@ -38,6 +41,8 @@ type Querier interface {
 	DeleteWorkflow(ctx context.Context, id uuid.UUID) error
 	FailExecution(ctx context.Context, arg FailExecutionParams) (Execution, error)
 	GetAlert(ctx context.Context, id uuid.UUID) (Alert, error)
+	GetAlertRule(ctx context.Context, arg GetAlertRuleParams) (AlertRule, error)
+	GetAlertRulesForMetric(ctx context.Context, arg GetAlertRulesForMetricParams) ([]AlertRule, error)
 	GetExecution(ctx context.Context, id uuid.UUID) (Execution, error)
 	GetExecutionByTemporalID(ctx context.Context, temporalWorkflowID *string) (Execution, error)
 	GetExecutionStats(ctx context.Context, arg GetExecutionStatsParams) (GetExecutionStatsRow, error)
@@ -56,6 +61,8 @@ type Querier interface {
 	GetWorkflow(ctx context.Context, id uuid.UUID) (Workflow, error)
 	InsertMetric(ctx context.Context, arg InsertMetricParams) (Metric, error)
 	InsertMetricsBatch(ctx context.Context, arg []InsertMetricsBatchParams) (int64, error)
+	ListAlertRules(ctx context.Context, arg ListAlertRulesParams) ([]AlertRule, error)
+	ListAlertRulesByConditionType(ctx context.Context, arg ListAlertRulesByConditionTypeParams) ([]AlertRule, error)
 	ListAlerts(ctx context.Context, arg ListAlertsParams) ([]Alert, error)
 	ListAlertsBySeverity(ctx context.Context, arg ListAlertsBySeverityParams) ([]Alert, error)
 	ListAlertsByStatus(ctx context.Context, arg ListAlertsByStatusParams) ([]Alert, error)
@@ -64,6 +71,7 @@ type Querier interface {
 	ListAuditLogsByEventType(ctx context.Context, arg ListAuditLogsByEventTypeParams) ([]AuditLog, error)
 	ListAuditLogsByResource(ctx context.Context, arg ListAuditLogsByResourceParams) ([]AuditLog, error)
 	ListAuditLogsByUser(ctx context.Context, arg ListAuditLogsByUserParams) ([]AuditLog, error)
+	ListEnabledAlertRules(ctx context.Context, tenantID uuid.UUID) ([]AlertRule, error)
 	ListExecutions(ctx context.Context, arg ListExecutionsParams) ([]Execution, error)
 	ListExecutionsByStatus(ctx context.Context, arg ListExecutionsByStatusParams) ([]Execution, error)
 	ListExecutionsByWorkflow(ctx context.Context, arg ListExecutionsByWorkflowParams) ([]Execution, error)
@@ -75,7 +83,11 @@ type Querier interface {
 	ListWorkflows(ctx context.Context, arg ListWorkflowsParams) ([]Workflow, error)
 	ListWorkflowsByStatus(ctx context.Context, arg ListWorkflowsByStatusParams) ([]Workflow, error)
 	ResolveAlert(ctx context.Context, arg ResolveAlertParams) (Alert, error)
-	UpdateExecutionStatus(ctx context.Context, arg UpdateExecutionStatusParams) (Execution, error)
+	UpdateAlertRule(ctx context.Context, arg UpdateAlertRuleParams) (AlertRule, error)
+	UpdateAlertRuleLastTriggered(ctx context.Context, id uuid.UUID) error
+	UpdateAlertTriggeredExecution(ctx context.Context, arg UpdateAlertTriggeredExecutionParams) error
+	UpdateExecutionRunID(ctx context.Context, arg UpdateExecutionRunIDParams) error
+	UpdateExecutionStatus(ctx context.Context, arg UpdateExecutionStatusParams) error
 	UpdateExecutionTemporalIDs(ctx context.Context, arg UpdateExecutionTemporalIDsParams) error
 	UpdateTenant(ctx context.Context, arg UpdateTenantParams) (Tenant, error)
 	UpdateUser(ctx context.Context, arg UpdateUserParams) (User, error)

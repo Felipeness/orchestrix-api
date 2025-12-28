@@ -365,24 +365,22 @@ func (h *Handler) Execute(w http.ResponseWriter, r *http.Request) {
 	}
 
 	input, _ := json.Marshal(req.Input)
-	userID, _ := uuid.Parse(user.ID)
 
 	// Create execution record
+	temporalWorkflowID := fmt.Sprintf("orchestrix-%s", uuid.New().String())
 	execution, err := h.queries.CreateExecution(ctx, db.CreateExecutionParams{
-		TenantID:   user.TenantID,
-		WorkflowID: workflowID,
-		Status:     "pending",
-		Input:      input,
-		CreatedBy:  uuidToPgtype(userID),
+		TenantID:           user.TenantID,
+		WorkflowID:         workflowID,
+		TemporalWorkflowID: &temporalWorkflowID,
+		Status:             "pending",
+		Input:              input,
+		TriggeredBy:        stringPtr("user:" + user.ID),
 	})
 	if err != nil {
 		slog.Error("failed to create execution", "error", err)
 		http.Error(w, "failed to create execution", http.StatusInternalServerError)
 		return
 	}
-
-	// Start Temporal workflow
-	temporalWorkflowID := fmt.Sprintf("orchestrix-%s-%s", workflowID.String(), execution.ID.String())
 
 	// Check if workflow has a valid definition with steps
 	hasDynamicDefinition := false
@@ -427,9 +425,11 @@ func (h *Handler) Execute(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("failed to start workflow", "error", err)
 		// Update execution status to failed
+		errMsg := err.Error()
 		h.queries.UpdateExecutionStatus(ctx, db.UpdateExecutionStatusParams{
 			ID:     execution.ID,
 			Status: "failed",
+			Error:  &errMsg,
 		})
 		http.Error(w, "failed to start workflow", http.StatusInternalServerError)
 		return
@@ -447,6 +447,7 @@ func (h *Handler) Execute(w http.ResponseWriter, r *http.Request) {
 	h.queries.UpdateExecutionStatus(ctx, db.UpdateExecutionStatusParams{
 		ID:     execution.ID,
 		Status: "running",
+		Error:  nil,
 	})
 
 	// Start goroutine to wait for workflow completion and update status
@@ -547,4 +548,11 @@ func uuidToPgtype(id uuid.UUID) pgtype.UUID {
 		return pgtype.UUID{Valid: false}
 	}
 	return pgtype.UUID{Bytes: id, Valid: true}
+}
+
+func stringPtr(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }

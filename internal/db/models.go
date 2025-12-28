@@ -14,19 +14,43 @@ import (
 )
 
 type Alert struct {
-	ID             uuid.UUID          `db:"id" json:"id"`
-	TenantID       uuid.UUID          `db:"tenant_id" json:"tenant_id"`
-	WorkflowID     pgtype.UUID        `db:"workflow_id" json:"workflow_id"`
-	ExecutionID    pgtype.UUID        `db:"execution_id" json:"execution_id"`
-	Severity       string             `db:"severity" json:"severity"`
-	Title          string             `db:"title" json:"title"`
-	Message        *string            `db:"message" json:"message"`
-	Status         string             `db:"status" json:"status"`
-	AcknowledgedAt pgtype.Timestamptz `db:"acknowledged_at" json:"acknowledged_at"`
-	AcknowledgedBy pgtype.UUID        `db:"acknowledged_by" json:"acknowledged_by"`
-	ResolvedAt     pgtype.Timestamptz `db:"resolved_at" json:"resolved_at"`
-	ResolvedBy     pgtype.UUID        `db:"resolved_by" json:"resolved_by"`
-	CreatedAt      time.Time          `db:"created_at" json:"created_at"`
+	ID                           uuid.UUID          `db:"id" json:"id"`
+	TenantID                     uuid.UUID          `db:"tenant_id" json:"tenant_id"`
+	WorkflowID                   pgtype.UUID        `db:"workflow_id" json:"workflow_id"`
+	ExecutionID                  pgtype.UUID        `db:"execution_id" json:"execution_id"`
+	Severity                     string             `db:"severity" json:"severity"`
+	Title                        string             `db:"title" json:"title"`
+	Message                      *string            `db:"message" json:"message"`
+	Status                       string             `db:"status" json:"status"`
+	AcknowledgedAt               pgtype.Timestamptz `db:"acknowledged_at" json:"acknowledged_at"`
+	AcknowledgedBy               pgtype.UUID        `db:"acknowledged_by" json:"acknowledged_by"`
+	ResolvedAt                   pgtype.Timestamptz `db:"resolved_at" json:"resolved_at"`
+	ResolvedBy                   pgtype.UUID        `db:"resolved_by" json:"resolved_by"`
+	CreatedAt                    time.Time          `db:"created_at" json:"created_at"`
+	TriggeredByRuleID            pgtype.UUID        `db:"triggered_by_rule_id" json:"triggered_by_rule_id"`
+	TriggeredWorkflowExecutionID pgtype.UUID        `db:"triggered_workflow_execution_id" json:"triggered_workflow_execution_id"`
+	Source                       *string            `db:"source" json:"source"`
+	Metadata                     []byte             `db:"metadata" json:"metadata"`
+}
+
+type AlertRule struct {
+	ID                   uuid.UUID          `db:"id" json:"id"`
+	TenantID             uuid.UUID          `db:"tenant_id" json:"tenant_id"`
+	Name                 string             `db:"name" json:"name"`
+	Description          *string            `db:"description" json:"description"`
+	Enabled              bool               `db:"enabled" json:"enabled"`
+	ConditionType        string             `db:"condition_type" json:"condition_type"`
+	ConditionConfig      json.RawMessage    `db:"condition_config" json:"condition_config"`
+	Severity             string             `db:"severity" json:"severity"`
+	AlertTitleTemplate   string             `db:"alert_title_template" json:"alert_title_template"`
+	AlertMessageTemplate *string            `db:"alert_message_template" json:"alert_message_template"`
+	TriggerWorkflowID    pgtype.UUID        `db:"trigger_workflow_id" json:"trigger_workflow_id"`
+	TriggerInputTemplate []byte             `db:"trigger_input_template" json:"trigger_input_template"`
+	CooldownSeconds      int32              `db:"cooldown_seconds" json:"cooldown_seconds"`
+	LastTriggeredAt      pgtype.Timestamptz `db:"last_triggered_at" json:"last_triggered_at"`
+	CreatedBy            pgtype.UUID        `db:"created_by" json:"created_by"`
+	CreatedAt            time.Time          `db:"created_at" json:"created_at"`
+	UpdatedAt            time.Time          `db:"updated_at" json:"updated_at"`
 }
 
 type AuditLog struct {
@@ -58,6 +82,7 @@ type Execution struct {
 	CompletedAt        pgtype.Timestamptz `db:"completed_at" json:"completed_at"`
 	CreatedBy          pgtype.UUID        `db:"created_by" json:"created_by"`
 	CreatedAt          time.Time          `db:"created_at" json:"created_at"`
+	TriggeredBy        *string            `db:"triggered_by" json:"triggered_by"`
 }
 
 type Metric struct {

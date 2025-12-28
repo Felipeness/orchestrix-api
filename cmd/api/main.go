@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/orchestrix/orchestrix-api/internal/alert"
+	"github.com/orchestrix/orchestrix-api/internal/alertrule"
 	"github.com/orchestrix/orchestrix-api/internal/audit"
 	"github.com/orchestrix/orchestrix-api/internal/auth"
 	"github.com/orchestrix/orchestrix-api/internal/execution"
@@ -63,6 +64,7 @@ func main() {
 	workflowHandler := workflow.NewHandler(pool)
 	executionHandler := execution.NewHandler(pool)
 	alertHandler := alert.NewHandler(pool)
+	alertRuleHandler := alertrule.NewHandler(pool)
 	auditHandler := audit.NewHandler(pool)
 	metricsHandler := metrics.NewHandler(pool)
 
@@ -119,6 +121,9 @@ func main() {
 
 			// Alert routes
 			r.Mount("/alerts", alertHandler.Routes())
+
+			// Alert rule routes (auto-remediation)
+			r.Mount("/alert-rules", alertRuleHandler.Routes())
 
 			// Audit log routes
 			r.Mount("/audit-logs", auditHandler.Routes())

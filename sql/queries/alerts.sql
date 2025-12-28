@@ -32,9 +32,14 @@ ORDER BY
 LIMIT $2 OFFSET $3;
 
 -- name: CreateAlert :one
-INSERT INTO alerts (tenant_id, workflow_id, execution_id, severity, title, message, status)
+INSERT INTO alerts (tenant_id, title, message, severity, source, metadata, triggered_by_rule_id)
 VALUES ($1, $2, $3, $4, $5, $6, $7)
 RETURNING *;
+
+-- name: UpdateAlertTriggeredExecution :exec
+UPDATE alerts
+SET triggered_workflow_execution_id = $2
+WHERE id = $1;
 
 -- name: AcknowledgeAlert :one
 UPDATE alerts

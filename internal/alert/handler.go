@@ -53,11 +53,11 @@ type PaginatedResponse struct {
 
 // CreateAlertRequest represents a create alert request
 type CreateAlertRequest struct {
-	WorkflowID  *string `json:"workflow_id"`
-	ExecutionID *string `json:"execution_id"`
-	Severity    string  `json:"severity"`
-	Title       string  `json:"title"`
-	Message     *string `json:"message"`
+	Severity string                 `json:"severity"`
+	Title    string                 `json:"title"`
+	Message  *string                `json:"message"`
+	Source   *string                `json:"source"`
+	Metadata map[string]interface{} `json:"metadata"`
 }
 
 func (h *Handler) setTenantContext(ctx context.Context, tenantID uuid.UUID) error {
@@ -192,28 +192,20 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		req.Severity = "info"
 	}
 
-	var workflowID, executionID pgtype.UUID
-	if req.WorkflowID != nil {
-		id, err := uuid.Parse(*req.WorkflowID)
-		if err == nil {
-			workflowID = pgtype.UUID{Bytes: id, Valid: true}
-		}
-	}
-	if req.ExecutionID != nil {
-		id, err := uuid.Parse(*req.ExecutionID)
-		if err == nil {
-			executionID = pgtype.UUID{Bytes: id, Valid: true}
-		}
+	var metadata []byte
+	if req.Metadata != nil {
+		metadata, _ = json.Marshal(req.Metadata)
+	} else {
+		metadata = []byte("{}")
 	}
 
 	alert, err := h.queries.CreateAlert(ctx, db.CreateAlertParams{
-		TenantID:    user.TenantID,
-		WorkflowID:  workflowID,
-		ExecutionID: executionID,
-		Severity:    req.Severity,
-		Title:       req.Title,
-		Message:     req.Message,
-		Status:      "open",
+		TenantID: user.TenantID,
+		Title:    req.Title,
+		Message:  req.Message,
+		Severity: req.Severity,
+		Source:   req.Source,
+		Metadata: metadata,
 	})
 	if err != nil {
 		slog.Error("failed to create alert", "error", err)

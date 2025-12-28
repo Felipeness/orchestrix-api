@@ -29,15 +29,19 @@ ORDER BY created_at DESC
 LIMIT $3;
 
 -- name: CreateExecution :one
-INSERT INTO executions (tenant_id, workflow_id, temporal_workflow_id, temporal_run_id, status, input, created_by)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO executions (tenant_id, workflow_id, temporal_workflow_id, status, input, triggered_by)
+VALUES ($1, $2, $3, $4, $5, $6)
 RETURNING *;
 
--- name: UpdateExecutionStatus :one
+-- name: UpdateExecutionStatus :exec
 UPDATE executions
-SET status = $2, started_at = COALESCE(started_at, CASE WHEN $2 = 'running' THEN NOW() END)
-WHERE id = $1
-RETURNING *;
+SET status = $2, error = $3
+WHERE id = $1;
+
+-- name: UpdateExecutionRunID :exec
+UPDATE executions
+SET temporal_run_id = $2, status = $3, started_at = $4
+WHERE id = $1;
 
 -- name: CompleteExecution :one
 UPDATE executions

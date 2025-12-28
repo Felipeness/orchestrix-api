@@ -17,7 +17,7 @@ const completeExecution = `-- name: CompleteExecution :one
 UPDATE executions
 SET status = $2, output = $3, completed_at = NOW()
 WHERE id = $1
-RETURNING id, tenant_id, workflow_id, temporal_workflow_id, temporal_run_id, status, input, output, error, started_at, completed_at, created_by, created_at
+RETURNING id, tenant_id, workflow_id, temporal_workflow_id, temporal_run_id, status, input, output, error, started_at, completed_at, created_by, created_at, triggered_by
 `
 
 type CompleteExecutionParams struct {
@@ -43,6 +43,7 @@ func (q *Queries) CompleteExecution(ctx context.Context, arg CompleteExecutionPa
 		&i.CompletedAt,
 		&i.CreatedBy,
 		&i.CreatedAt,
+		&i.TriggeredBy,
 	)
 	return i, err
 }
@@ -75,19 +76,18 @@ func (q *Queries) CountExecutionsByStatus(ctx context.Context, arg CountExecutio
 }
 
 const createExecution = `-- name: CreateExecution :one
-INSERT INTO executions (tenant_id, workflow_id, temporal_workflow_id, temporal_run_id, status, input, created_by)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, tenant_id, workflow_id, temporal_workflow_id, temporal_run_id, status, input, output, error, started_at, completed_at, created_by, created_at
+INSERT INTO executions (tenant_id, workflow_id, temporal_workflow_id, status, input, triggered_by)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, tenant_id, workflow_id, temporal_workflow_id, temporal_run_id, status, input, output, error, started_at, completed_at, created_by, created_at, triggered_by
 `
 
 type CreateExecutionParams struct {
-	TenantID           uuid.UUID   `db:"tenant_id" json:"tenant_id"`
-	WorkflowID         uuid.UUID   `db:"workflow_id" json:"workflow_id"`
-	TemporalWorkflowID *string     `db:"temporal_workflow_id" json:"temporal_workflow_id"`
-	TemporalRunID      *string     `db:"temporal_run_id" json:"temporal_run_id"`
-	Status             string      `db:"status" json:"status"`
-	Input              []byte      `db:"input" json:"input"`
-	CreatedBy          pgtype.UUID `db:"created_by" json:"created_by"`
+	TenantID           uuid.UUID `db:"tenant_id" json:"tenant_id"`
+	WorkflowID         uuid.UUID `db:"workflow_id" json:"workflow_id"`
+	TemporalWorkflowID *string   `db:"temporal_workflow_id" json:"temporal_workflow_id"`
+	Status             string    `db:"status" json:"status"`
+	Input              []byte    `db:"input" json:"input"`
+	TriggeredBy        *string   `db:"triggered_by" json:"triggered_by"`
 }
 
 func (q *Queries) CreateExecution(ctx context.Context, arg CreateExecutionParams) (Execution, error) {
@@ -95,10 +95,9 @@ func (q *Queries) CreateExecution(ctx context.Context, arg CreateExecutionParams
 		arg.TenantID,
 		arg.WorkflowID,
 		arg.TemporalWorkflowID,
-		arg.TemporalRunID,
 		arg.Status,
 		arg.Input,
-		arg.CreatedBy,
+		arg.TriggeredBy,
 	)
 	var i Execution
 	err := row.Scan(
@@ -115,6 +114,7 @@ func (q *Queries) CreateExecution(ctx context.Context, arg CreateExecutionParams
 		&i.CompletedAt,
 		&i.CreatedBy,
 		&i.CreatedAt,
+		&i.TriggeredBy,
 	)
 	return i, err
 }
@@ -123,7 +123,7 @@ const failExecution = `-- name: FailExecution :one
 UPDATE executions
 SET status = 'failed', error = $2, completed_at = NOW()
 WHERE id = $1
-RETURNING id, tenant_id, workflow_id, temporal_workflow_id, temporal_run_id, status, input, output, error, started_at, completed_at, created_by, created_at
+RETURNING id, tenant_id, workflow_id, temporal_workflow_id, temporal_run_id, status, input, output, error, started_at, completed_at, created_by, created_at, triggered_by
 `
 
 type FailExecutionParams struct {
@@ -148,12 +148,13 @@ func (q *Queries) FailExecution(ctx context.Context, arg FailExecutionParams) (E
 		&i.CompletedAt,
 		&i.CreatedBy,
 		&i.CreatedAt,
+		&i.TriggeredBy,
 	)
 	return i, err
 }
 
 const getExecution = `-- name: GetExecution :one
-SELECT id, tenant_id, workflow_id, temporal_workflow_id, temporal_run_id, status, input, output, error, started_at, completed_at, created_by, created_at FROM executions WHERE id = $1
+SELECT id, tenant_id, workflow_id, temporal_workflow_id, temporal_run_id, status, input, output, error, started_at, completed_at, created_by, created_at, triggered_by FROM executions WHERE id = $1
 `
 
 func (q *Queries) GetExecution(ctx context.Context, id uuid.UUID) (Execution, error) {
@@ -173,12 +174,13 @@ func (q *Queries) GetExecution(ctx context.Context, id uuid.UUID) (Execution, er
 		&i.CompletedAt,
 		&i.CreatedBy,
 		&i.CreatedAt,
+		&i.TriggeredBy,
 	)
 	return i, err
 }
 
 const getExecutionByTemporalID = `-- name: GetExecutionByTemporalID :one
-SELECT id, tenant_id, workflow_id, temporal_workflow_id, temporal_run_id, status, input, output, error, started_at, completed_at, created_by, created_at FROM executions WHERE temporal_workflow_id = $1
+SELECT id, tenant_id, workflow_id, temporal_workflow_id, temporal_run_id, status, input, output, error, started_at, completed_at, created_by, created_at, triggered_by FROM executions WHERE temporal_workflow_id = $1
 `
 
 func (q *Queries) GetExecutionByTemporalID(ctx context.Context, temporalWorkflowID *string) (Execution, error) {
@@ -198,6 +200,7 @@ func (q *Queries) GetExecutionByTemporalID(ctx context.Context, temporalWorkflow
 		&i.CompletedAt,
 		&i.CreatedBy,
 		&i.CreatedAt,
+		&i.TriggeredBy,
 	)
 	return i, err
 }
@@ -243,7 +246,7 @@ func (q *Queries) GetExecutionStats(ctx context.Context, arg GetExecutionStatsPa
 }
 
 const listExecutions = `-- name: ListExecutions :many
-SELECT id, tenant_id, workflow_id, temporal_workflow_id, temporal_run_id, status, input, output, error, started_at, completed_at, created_by, created_at FROM executions
+SELECT id, tenant_id, workflow_id, temporal_workflow_id, temporal_run_id, status, input, output, error, started_at, completed_at, created_by, created_at, triggered_by FROM executions
 WHERE tenant_id = $1
 ORDER BY created_at DESC
 LIMIT $2 OFFSET $3
@@ -278,6 +281,7 @@ func (q *Queries) ListExecutions(ctx context.Context, arg ListExecutionsParams) 
 			&i.CompletedAt,
 			&i.CreatedBy,
 			&i.CreatedAt,
+			&i.TriggeredBy,
 		); err != nil {
 			return nil, err
 		}
@@ -290,7 +294,7 @@ func (q *Queries) ListExecutions(ctx context.Context, arg ListExecutionsParams) 
 }
 
 const listExecutionsByStatus = `-- name: ListExecutionsByStatus :many
-SELECT id, tenant_id, workflow_id, temporal_workflow_id, temporal_run_id, status, input, output, error, started_at, completed_at, created_by, created_at FROM executions
+SELECT id, tenant_id, workflow_id, temporal_workflow_id, temporal_run_id, status, input, output, error, started_at, completed_at, created_by, created_at, triggered_by FROM executions
 WHERE tenant_id = $1 AND status = $2
 ORDER BY created_at DESC
 LIMIT $3 OFFSET $4
@@ -331,6 +335,7 @@ func (q *Queries) ListExecutionsByStatus(ctx context.Context, arg ListExecutions
 			&i.CompletedAt,
 			&i.CreatedBy,
 			&i.CreatedAt,
+			&i.TriggeredBy,
 		); err != nil {
 			return nil, err
 		}
@@ -343,7 +348,7 @@ func (q *Queries) ListExecutionsByStatus(ctx context.Context, arg ListExecutions
 }
 
 const listExecutionsByWorkflow = `-- name: ListExecutionsByWorkflow :many
-SELECT id, tenant_id, workflow_id, temporal_workflow_id, temporal_run_id, status, input, output, error, started_at, completed_at, created_by, created_at FROM executions
+SELECT id, tenant_id, workflow_id, temporal_workflow_id, temporal_run_id, status, input, output, error, started_at, completed_at, created_by, created_at, triggered_by FROM executions
 WHERE workflow_id = $1
 ORDER BY created_at DESC
 LIMIT $2 OFFSET $3
@@ -378,6 +383,7 @@ func (q *Queries) ListExecutionsByWorkflow(ctx context.Context, arg ListExecutio
 			&i.CompletedAt,
 			&i.CreatedBy,
 			&i.CreatedAt,
+			&i.TriggeredBy,
 		); err != nil {
 			return nil, err
 		}
@@ -390,7 +396,7 @@ func (q *Queries) ListExecutionsByWorkflow(ctx context.Context, arg ListExecutio
 }
 
 const listRecentExecutions = `-- name: ListRecentExecutions :many
-SELECT id, tenant_id, workflow_id, temporal_workflow_id, temporal_run_id, status, input, output, error, started_at, completed_at, created_by, created_at FROM executions
+SELECT id, tenant_id, workflow_id, temporal_workflow_id, temporal_run_id, status, input, output, error, started_at, completed_at, created_by, created_at, triggered_by FROM executions
 WHERE tenant_id = $1 AND created_at > $2
 ORDER BY created_at DESC
 LIMIT $3
@@ -425,6 +431,7 @@ func (q *Queries) ListRecentExecutions(ctx context.Context, arg ListRecentExecut
 			&i.CompletedAt,
 			&i.CreatedBy,
 			&i.CreatedAt,
+			&i.TriggeredBy,
 		); err != nil {
 			return nil, err
 		}
@@ -436,37 +443,44 @@ func (q *Queries) ListRecentExecutions(ctx context.Context, arg ListRecentExecut
 	return items, nil
 }
 
-const updateExecutionStatus = `-- name: UpdateExecutionStatus :one
+const updateExecutionRunID = `-- name: UpdateExecutionRunID :exec
 UPDATE executions
-SET status = $2, started_at = COALESCE(started_at, CASE WHEN $2 = 'running' THEN NOW() END)
+SET temporal_run_id = $2, status = $3, started_at = $4
 WHERE id = $1
-RETURNING id, tenant_id, workflow_id, temporal_workflow_id, temporal_run_id, status, input, output, error, started_at, completed_at, created_by, created_at
+`
+
+type UpdateExecutionRunIDParams struct {
+	ID            uuid.UUID          `db:"id" json:"id"`
+	TemporalRunID *string            `db:"temporal_run_id" json:"temporal_run_id"`
+	Status        string             `db:"status" json:"status"`
+	StartedAt     pgtype.Timestamptz `db:"started_at" json:"started_at"`
+}
+
+func (q *Queries) UpdateExecutionRunID(ctx context.Context, arg UpdateExecutionRunIDParams) error {
+	_, err := q.db.Exec(ctx, updateExecutionRunID,
+		arg.ID,
+		arg.TemporalRunID,
+		arg.Status,
+		arg.StartedAt,
+	)
+	return err
+}
+
+const updateExecutionStatus = `-- name: UpdateExecutionStatus :exec
+UPDATE executions
+SET status = $2, error = $3
+WHERE id = $1
 `
 
 type UpdateExecutionStatusParams struct {
 	ID     uuid.UUID `db:"id" json:"id"`
 	Status string    `db:"status" json:"status"`
+	Error  *string   `db:"error" json:"error"`
 }
 
-func (q *Queries) UpdateExecutionStatus(ctx context.Context, arg UpdateExecutionStatusParams) (Execution, error) {
-	row := q.db.QueryRow(ctx, updateExecutionStatus, arg.ID, arg.Status)
-	var i Execution
-	err := row.Scan(
-		&i.ID,
-		&i.TenantID,
-		&i.WorkflowID,
-		&i.TemporalWorkflowID,
-		&i.TemporalRunID,
-		&i.Status,
-		&i.Input,
-		&i.Output,
-		&i.Error,
-		&i.StartedAt,
-		&i.CompletedAt,
-		&i.CreatedBy,
-		&i.CreatedAt,
-	)
-	return i, err
+func (q *Queries) UpdateExecutionStatus(ctx context.Context, arg UpdateExecutionStatusParams) error {
+	_, err := q.db.Exec(ctx, updateExecutionStatus, arg.ID, arg.Status, arg.Error)
+	return err
 }
 
 const updateExecutionTemporalIDs = `-- name: UpdateExecutionTemporalIDs :exec

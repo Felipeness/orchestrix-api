@@ -1,0 +1,3 @@
+DROP INDEX IF EXISTS idx_alerts_source;
+ALTER TABLE alerts DROP COLUMN IF EXISTS metadata;
+ALTER TABLE alerts DROP COLUMN IF EXISTS source;

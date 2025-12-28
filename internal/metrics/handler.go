@@ -10,21 +10,24 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/orchestrix/orchestrix-api/internal/alertrule"
 	"github.com/orchestrix/orchestrix-api/internal/auth"
 	"github.com/orchestrix/orchestrix-api/internal/db"
 )
 
 // Handler handles metrics HTTP requests
 type Handler struct {
-	queries *db.Queries
-	pool    *pgxpool.Pool
+	queries   *db.Queries
+	pool      *pgxpool.Pool
+	evaluator *alertrule.Evaluator
 }
 
 // NewHandler creates a new metrics handler
 func NewHandler(pool *pgxpool.Pool) *Handler {
 	return &Handler{
-		queries: db.New(pool),
-		pool:    pool,
+		queries:   db.New(pool),
+		pool:      pool,
+		evaluator: alertrule.NewEvaluator(pool),
 	}
 }
 
@@ -143,6 +146,24 @@ func (h *Handler) Ingest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Evaluate metric against alert rules (async to not block response)
+	go func() {
+		labelsMap := make(map[string]interface{})
+		for k, v := range req.Labels {
+			labelsMap[k] = v
+		}
+		metricData := alertrule.MetricData{
+			Name:      req.Name,
+			Value:     req.Value,
+			Labels:    labelsMap,
+			Source:    req.Source,
+			Timestamp: timestamp,
+		}
+		if err := h.evaluator.EvaluateMetric(ctx, user.TenantID, metricData); err != nil {
+			slog.Error("failed to evaluate metric", "error", err, "metric", req.Name)
+		}
+	}()
+
 	slog.Info("metric ingested", "name", req.Name, "value", req.Value)
 	respondJSON(w, http.StatusCreated, map[string]interface{}{"data": metric})
 }
@@ -193,6 +214,26 @@ func (h *Handler) IngestBatch(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		inserted++
+
+		// Evaluate metric against alert rules (async)
+		metricCopy := m
+		tsCopy := timestamp
+		go func() {
+			labelsMap := make(map[string]interface{})
+			for k, v := range metricCopy.Labels {
+				labelsMap[k] = v
+			}
+			metricData := alertrule.MetricData{
+				Name:      metricCopy.Name,
+				Value:     metricCopy.Value,
+				Labels:    labelsMap,
+				Source:    metricCopy.Source,
+				Timestamp: tsCopy,
+			}
+			if err := h.evaluator.EvaluateMetric(ctx, user.TenantID, metricData); err != nil {
+				slog.Error("failed to evaluate metric", "error", err, "metric", metricCopy.Name)
+			}
+		}()
 	}
 
 	slog.Info("batch metrics ingested", "total", len(req.Metrics), "inserted", inserted)

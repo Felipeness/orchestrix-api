@@ -16,7 +16,7 @@ const acknowledgeAlert = `-- name: AcknowledgeAlert :one
 UPDATE alerts
 SET status = 'acknowledged', acknowledged_at = NOW(), acknowledged_by = $2
 WHERE id = $1
-RETURNING id, tenant_id, workflow_id, execution_id, severity, title, message, status, acknowledged_at, acknowledged_by, resolved_at, resolved_by, created_at
+RETURNING id, tenant_id, workflow_id, execution_id, severity, title, message, status, acknowledged_at, acknowledged_by, resolved_at, resolved_by, created_at, triggered_by_rule_id, triggered_workflow_execution_id, source, metadata
 `
 
 type AcknowledgeAlertParams struct {
@@ -41,6 +41,10 @@ func (q *Queries) AcknowledgeAlert(ctx context.Context, arg AcknowledgeAlertPara
 		&i.ResolvedAt,
 		&i.ResolvedBy,
 		&i.CreatedAt,
+		&i.TriggeredByRuleID,
+		&i.TriggeredWorkflowExecutionID,
+		&i.Source,
+		&i.Metadata,
 	)
 	return i, err
 }
@@ -105,30 +109,30 @@ func (q *Queries) CountOpenAlertsBySeverity(ctx context.Context, tenantID uuid.U
 }
 
 const createAlert = `-- name: CreateAlert :one
-INSERT INTO alerts (tenant_id, workflow_id, execution_id, severity, title, message, status)
+INSERT INTO alerts (tenant_id, title, message, severity, source, metadata, triggered_by_rule_id)
 VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, tenant_id, workflow_id, execution_id, severity, title, message, status, acknowledged_at, acknowledged_by, resolved_at, resolved_by, created_at
+RETURNING id, tenant_id, workflow_id, execution_id, severity, title, message, status, acknowledged_at, acknowledged_by, resolved_at, resolved_by, created_at, triggered_by_rule_id, triggered_workflow_execution_id, source, metadata
 `
 
 type CreateAlertParams struct {
-	TenantID    uuid.UUID   `db:"tenant_id" json:"tenant_id"`
-	WorkflowID  pgtype.UUID `db:"workflow_id" json:"workflow_id"`
-	ExecutionID pgtype.UUID `db:"execution_id" json:"execution_id"`
-	Severity    string      `db:"severity" json:"severity"`
-	Title       string      `db:"title" json:"title"`
-	Message     *string     `db:"message" json:"message"`
-	Status      string      `db:"status" json:"status"`
+	TenantID          uuid.UUID   `db:"tenant_id" json:"tenant_id"`
+	Title             string      `db:"title" json:"title"`
+	Message           *string     `db:"message" json:"message"`
+	Severity          string      `db:"severity" json:"severity"`
+	Source            *string     `db:"source" json:"source"`
+	Metadata          []byte      `db:"metadata" json:"metadata"`
+	TriggeredByRuleID pgtype.UUID `db:"triggered_by_rule_id" json:"triggered_by_rule_id"`
 }
 
 func (q *Queries) CreateAlert(ctx context.Context, arg CreateAlertParams) (Alert, error) {
 	row := q.db.QueryRow(ctx, createAlert,
 		arg.TenantID,
-		arg.WorkflowID,
-		arg.ExecutionID,
-		arg.Severity,
 		arg.Title,
 		arg.Message,
-		arg.Status,
+		arg.Severity,
+		arg.Source,
+		arg.Metadata,
+		arg.TriggeredByRuleID,
 	)
 	var i Alert
 	err := row.Scan(
@@ -145,12 +149,16 @@ func (q *Queries) CreateAlert(ctx context.Context, arg CreateAlertParams) (Alert
 		&i.ResolvedAt,
 		&i.ResolvedBy,
 		&i.CreatedAt,
+		&i.TriggeredByRuleID,
+		&i.TriggeredWorkflowExecutionID,
+		&i.Source,
+		&i.Metadata,
 	)
 	return i, err
 }
 
 const getAlert = `-- name: GetAlert :one
-SELECT id, tenant_id, workflow_id, execution_id, severity, title, message, status, acknowledged_at, acknowledged_by, resolved_at, resolved_by, created_at FROM alerts WHERE id = $1
+SELECT id, tenant_id, workflow_id, execution_id, severity, title, message, status, acknowledged_at, acknowledged_by, resolved_at, resolved_by, created_at, triggered_by_rule_id, triggered_workflow_execution_id, source, metadata FROM alerts WHERE id = $1
 `
 
 func (q *Queries) GetAlert(ctx context.Context, id uuid.UUID) (Alert, error) {
@@ -170,12 +178,16 @@ func (q *Queries) GetAlert(ctx context.Context, id uuid.UUID) (Alert, error) {
 		&i.ResolvedAt,
 		&i.ResolvedBy,
 		&i.CreatedAt,
+		&i.TriggeredByRuleID,
+		&i.TriggeredWorkflowExecutionID,
+		&i.Source,
+		&i.Metadata,
 	)
 	return i, err
 }
 
 const listAlerts = `-- name: ListAlerts :many
-SELECT id, tenant_id, workflow_id, execution_id, severity, title, message, status, acknowledged_at, acknowledged_by, resolved_at, resolved_by, created_at FROM alerts
+SELECT id, tenant_id, workflow_id, execution_id, severity, title, message, status, acknowledged_at, acknowledged_by, resolved_at, resolved_by, created_at, triggered_by_rule_id, triggered_workflow_execution_id, source, metadata FROM alerts
 WHERE tenant_id = $1
 ORDER BY created_at DESC
 LIMIT $2 OFFSET $3
@@ -210,6 +222,10 @@ func (q *Queries) ListAlerts(ctx context.Context, arg ListAlertsParams) ([]Alert
 			&i.ResolvedAt,
 			&i.ResolvedBy,
 			&i.CreatedAt,
+			&i.TriggeredByRuleID,
+			&i.TriggeredWorkflowExecutionID,
+			&i.Source,
+			&i.Metadata,
 		); err != nil {
 			return nil, err
 		}
@@ -222,7 +238,7 @@ func (q *Queries) ListAlerts(ctx context.Context, arg ListAlertsParams) ([]Alert
 }
 
 const listAlertsBySeverity = `-- name: ListAlertsBySeverity :many
-SELECT id, tenant_id, workflow_id, execution_id, severity, title, message, status, acknowledged_at, acknowledged_by, resolved_at, resolved_by, created_at FROM alerts
+SELECT id, tenant_id, workflow_id, execution_id, severity, title, message, status, acknowledged_at, acknowledged_by, resolved_at, resolved_by, created_at, triggered_by_rule_id, triggered_workflow_execution_id, source, metadata FROM alerts
 WHERE tenant_id = $1 AND severity = $2
 ORDER BY created_at DESC
 LIMIT $3 OFFSET $4
@@ -263,6 +279,10 @@ func (q *Queries) ListAlertsBySeverity(ctx context.Context, arg ListAlertsBySeve
 			&i.ResolvedAt,
 			&i.ResolvedBy,
 			&i.CreatedAt,
+			&i.TriggeredByRuleID,
+			&i.TriggeredWorkflowExecutionID,
+			&i.Source,
+			&i.Metadata,
 		); err != nil {
 			return nil, err
 		}
@@ -275,7 +295,7 @@ func (q *Queries) ListAlertsBySeverity(ctx context.Context, arg ListAlertsBySeve
 }
 
 const listAlertsByStatus = `-- name: ListAlertsByStatus :many
-SELECT id, tenant_id, workflow_id, execution_id, severity, title, message, status, acknowledged_at, acknowledged_by, resolved_at, resolved_by, created_at FROM alerts
+SELECT id, tenant_id, workflow_id, execution_id, severity, title, message, status, acknowledged_at, acknowledged_by, resolved_at, resolved_by, created_at, triggered_by_rule_id, triggered_workflow_execution_id, source, metadata FROM alerts
 WHERE tenant_id = $1 AND status = $2
 ORDER BY created_at DESC
 LIMIT $3 OFFSET $4
@@ -316,6 +336,10 @@ func (q *Queries) ListAlertsByStatus(ctx context.Context, arg ListAlertsByStatus
 			&i.ResolvedAt,
 			&i.ResolvedBy,
 			&i.CreatedAt,
+			&i.TriggeredByRuleID,
+			&i.TriggeredWorkflowExecutionID,
+			&i.Source,
+			&i.Metadata,
 		); err != nil {
 			return nil, err
 		}
@@ -328,7 +352,7 @@ func (q *Queries) ListAlertsByStatus(ctx context.Context, arg ListAlertsByStatus
 }
 
 const listOpenAlerts = `-- name: ListOpenAlerts :many
-SELECT id, tenant_id, workflow_id, execution_id, severity, title, message, status, acknowledged_at, acknowledged_by, resolved_at, resolved_by, created_at FROM alerts
+SELECT id, tenant_id, workflow_id, execution_id, severity, title, message, status, acknowledged_at, acknowledged_by, resolved_at, resolved_by, created_at, triggered_by_rule_id, triggered_workflow_execution_id, source, metadata FROM alerts
 WHERE tenant_id = $1 AND status = 'open'
 ORDER BY
     CASE severity
@@ -369,6 +393,10 @@ func (q *Queries) ListOpenAlerts(ctx context.Context, arg ListOpenAlertsParams) 
 			&i.ResolvedAt,
 			&i.ResolvedBy,
 			&i.CreatedAt,
+			&i.TriggeredByRuleID,
+			&i.TriggeredWorkflowExecutionID,
+			&i.Source,
+			&i.Metadata,
 		); err != nil {
 			return nil, err
 		}
@@ -384,7 +412,7 @@ const resolveAlert = `-- name: ResolveAlert :one
 UPDATE alerts
 SET status = 'resolved', resolved_at = NOW(), resolved_by = $2
 WHERE id = $1
-RETURNING id, tenant_id, workflow_id, execution_id, severity, title, message, status, acknowledged_at, acknowledged_by, resolved_at, resolved_by, created_at
+RETURNING id, tenant_id, workflow_id, execution_id, severity, title, message, status, acknowledged_at, acknowledged_by, resolved_at, resolved_by, created_at, triggered_by_rule_id, triggered_workflow_execution_id, source, metadata
 `
 
 type ResolveAlertParams struct {
@@ -409,6 +437,26 @@ func (q *Queries) ResolveAlert(ctx context.Context, arg ResolveAlertParams) (Ale
 		&i.ResolvedAt,
 		&i.ResolvedBy,
 		&i.CreatedAt,
+		&i.TriggeredByRuleID,
+		&i.TriggeredWorkflowExecutionID,
+		&i.Source,
+		&i.Metadata,
 	)
 	return i, err
+}
+
+const updateAlertTriggeredExecution = `-- name: UpdateAlertTriggeredExecution :exec
+UPDATE alerts
+SET triggered_workflow_execution_id = $2
+WHERE id = $1
+`
+
+type UpdateAlertTriggeredExecutionParams struct {
+	ID                           uuid.UUID   `db:"id" json:"id"`
+	TriggeredWorkflowExecutionID pgtype.UUID `db:"triggered_workflow_execution_id" json:"triggered_workflow_execution_id"`
+}
+
+func (q *Queries) UpdateAlertTriggeredExecution(ctx context.Context, arg UpdateAlertTriggeredExecutionParams) error {
+	_, err := q.db.Exec(ctx, updateAlertTriggeredExecution, arg.ID, arg.TriggeredWorkflowExecutionID)
+	return err
 }
