@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"log/slog"
-	"strings"
+	"regexp"
 	"text/template"
 	"time"
 
@@ -16,6 +18,15 @@ import (
 	"github.com/orchestrix/orchestrix-api/internal/db"
 	"github.com/orchestrix/orchestrix-api/pkg/temporal"
 )
+
+// Domain errors
+var (
+	ErrTenantMismatch = errors.New("workflow belongs to different tenant")
+	ErrInvalidTemplate = errors.New("invalid template syntax")
+)
+
+// templateVarRegex matches ${var} syntax
+var templateVarRegex = regexp.MustCompile(`\$\{([^}]+)\}`)
 
 // MetricData represents a metric being evaluated
 type MetricData struct {
@@ -31,6 +42,34 @@ type ThresholdCondition struct {
 	MetricName string  `json:"metric_name"`
 	Operator   string  `json:"operator"` // gt, gte, lt, lte, eq, ne
 	Threshold  float64 `json:"threshold"`
+}
+
+// AlertTemplateData holds data for alert template rendering (CUPID: Domain-based)
+type AlertTemplateData struct {
+	MetricName string                 `json:"metric_name"`
+	Value      float64                `json:"value"`
+	Threshold  float64                `json:"threshold"`
+	Operator   string                 `json:"operator"`
+	Labels     map[string]interface{} `json:"labels"`
+	Source     string                 `json:"source"`
+	Timestamp  string                 `json:"timestamp"`
+	RuleName   string                 `json:"rule_name"`
+	Severity   string                 `json:"severity"`
+}
+
+// ToMap converts AlertTemplateData to map for template rendering
+func (d AlertTemplateData) ToMap() map[string]interface{} {
+	return map[string]interface{}{
+		"metric_name": d.MetricName,
+		"value":       d.Value,
+		"threshold":   d.Threshold,
+		"operator":    d.Operator,
+		"labels":      d.Labels,
+		"source":      d.Source,
+		"timestamp":   d.Timestamp,
+		"rule_name":   d.RuleName,
+		"severity":    d.Severity,
+	}
 }
 
 // CompareFunc defines a comparison function type
@@ -122,24 +161,23 @@ func (e *Evaluator) evaluateRule(_ context.Context, rule db.AlertRule, metric Me
 
 // triggerAlert creates an alert and optionally triggers a workflow
 func (e *Evaluator) triggerAlert(ctx context.Context, tenantID uuid.UUID, rule db.AlertRule, metric MetricData) error {
-	// Build template context
-	templateData := map[string]interface{}{
-		"metric_name": metric.Name,
-		"value":       metric.Value,
-		"threshold":   0.0, // Will be extracted from condition
-		"labels":      metric.Labels,
-		"source":      metric.Source,
-		"timestamp":   metric.Timestamp.Format(time.RFC3339),
-		"rule_name":   rule.Name,
-		"severity":    rule.Severity,
-	}
-
-	// Extract threshold from condition
+	// Parse condition for template data
 	var condition ThresholdCondition
-	if err := json.Unmarshal(rule.ConditionConfig, &condition); err == nil {
-		templateData["threshold"] = condition.Threshold
-		templateData["operator"] = condition.Operator
+	_ = json.Unmarshal(rule.ConditionConfig, &condition)
+
+	// Build typed template data (CUPID: Domain-based)
+	tplData := AlertTemplateData{
+		MetricName: metric.Name,
+		Value:      metric.Value,
+		Threshold:  condition.Threshold,
+		Operator:   condition.Operator,
+		Labels:     metric.Labels,
+		Source:     metric.Source,
+		Timestamp:  metric.Timestamp.Format(time.RFC3339),
+		RuleName:   rule.Name,
+		Severity:   rule.Severity,
 	}
+	templateData := tplData.ToMap()
 
 	// Render alert title
 	title, err := e.renderTemplate(rule.AlertTitleTemplate, templateData)
@@ -171,7 +209,7 @@ func (e *Evaluator) triggerAlert(ctx context.Context, tenantID uuid.UUID, rule d
 		TriggeredByRuleID: pgtype.UUID{Bytes: rule.ID, Valid: true},
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("create alert: %w", err)
 	}
 
 	slog.Info("alert created",
@@ -203,12 +241,13 @@ func (e *Evaluator) triggerWorkflow(ctx context.Context, tenantID uuid.UUID, rul
 	// Get workflow details
 	workflow, err := e.queries.GetWorkflow(ctx, workflowUUID)
 	if err != nil {
-		return err
+		return fmt.Errorf("get workflow: %w", err)
 	}
 
-	// Verify tenant ownership
+	// Verify tenant ownership (CUPID: Predictable - explicit error)
 	if workflow.TenantID != tenantID {
-		return nil // Silent fail - workflow belongs to different tenant
+		slog.Warn("workflow tenant mismatch", "workflow_id", workflowUUID, "expected", tenantID, "got", workflow.TenantID)
+		return ErrTenantMismatch
 	}
 
 	// Build workflow input from template
@@ -359,21 +398,7 @@ func (e *Evaluator) renderInputTemplate(input map[string]interface{}, data map[s
 	return result
 }
 
-// convertTemplateDelimiters converts ${var} to {{.var}}
+// convertTemplateDelimiters converts ${var} to {{.var}} using regex (CUPID: Predictable)
 func convertTemplateDelimiters(s string) string {
-	// Simple conversion for ${var} syntax
-	result := s
-	for {
-		start := strings.Index(result, "${")
-		if start == -1 {
-			break
-		}
-		end := strings.Index(result[start:], "}")
-		if end == -1 {
-			break
-		}
-		varName := result[start+2 : start+end]
-		result = result[:start] + "{{." + varName + "}}" + result[start+end+1:]
-	}
-	return result
+	return templateVarRegex.ReplaceAllString(s, "{{.$1}}")
 }
