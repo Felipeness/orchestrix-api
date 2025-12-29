@@ -85,9 +85,9 @@ func (r *MetricRepository) FindByQuery(ctx context.Context, query domain.MetricQ
 	var err error
 
 	if len(query.Labels) > 0 {
-		labels, err := json.Marshal(query.Labels)
-		if err != nil {
-			return nil, err
+		labels, marshalErr := json.Marshal(query.Labels)
+		if marshalErr != nil {
+			return nil, marshalErr
 		}
 		rows, err = r.queries.GetMetricsByLabels(ctx, db.GetMetricsByLabelsParams{
 			TenantID:    query.TenantID,
