@@ -34,6 +34,7 @@ type AlertSeverity string
 const (
 	AlertSeverityCritical AlertSeverity = "critical"
 	AlertSeverityHigh     AlertSeverity = "high"
+	AlertSeverityWarning  AlertSeverity = "warning"
 	AlertSeverityMedium   AlertSeverity = "medium"
 	AlertSeverityLow      AlertSeverity = "low"
 	AlertSeverityInfo     AlertSeverity = "info"
@@ -43,6 +44,7 @@ const (
 type AlertStatus string
 
 const (
+	AlertStatusOpen         AlertStatus = "open"
 	AlertStatusTriggered    AlertStatus = "triggered"
 	AlertStatusAcknowledged AlertStatus = "acknowledged"
 	AlertStatusResolved     AlertStatus = "resolved"
@@ -50,12 +52,12 @@ const (
 
 // CanAcknowledge checks if the alert can be acknowledged
 func (a *Alert) CanAcknowledge() bool {
-	return a.Status == AlertStatusTriggered
+	return a.Status == AlertStatusOpen || a.Status == AlertStatusTriggered
 }
 
 // CanResolve checks if the alert can be resolved
 func (a *Alert) CanResolve() bool {
-	return a.Status == AlertStatusTriggered || a.Status == AlertStatusAcknowledged
+	return a.Status == AlertStatusOpen || a.Status == AlertStatusTriggered || a.Status == AlertStatusAcknowledged
 }
 
 // Acknowledge acknowledges the alert

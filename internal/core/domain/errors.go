@@ -31,6 +31,8 @@ var (
 	ErrAuditLogNotFound = errors.New("audit log not found")
 
 	// General errors
+	ErrNotFound     = errors.New("not found")
 	ErrUnauthorized = errors.New("unauthorized")
 	ErrForbidden    = errors.New("forbidden")
+	ErrInternal     = errors.New("internal error")
 )
