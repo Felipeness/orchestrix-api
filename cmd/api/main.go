@@ -30,7 +30,6 @@ import (
 
 	// Legacy handlers (to be migrated)
 	"github.com/orchestrix/orchestrix-api/internal/alertrule"
-	"github.com/orchestrix/orchestrix-api/internal/metrics"
 )
 
 func main() {
@@ -80,11 +79,21 @@ func main() {
 	executionRepo := postgres.NewExecutionRepository(pool)
 	alertRepo := postgres.NewAlertRepository(pool)
 	auditRepo := postgres.NewAuditRepository(pool)
+	alertRuleRepo := postgres.NewAlertRuleRepository(pool)
+	metricRepo := postgres.NewMetricRepository(pool)
+	metricDefRepo := postgres.NewMetricDefinitionRepository(pool)
 	workflowExecutor := temporalAdapter.NewWorkflowExecutor(temporalClient)
 
 	// Core Services (Application Layer)
 	auditService := service.NewAuditService(auditRepo, tenantContextSetter)
 	alertService := service.NewAlertService(alertRepo, auditService, tenantContextSetter)
+	alertRuleService := service.NewAlertRuleService(
+		alertRuleRepo,
+		alertService,
+		nil, // workflowService will be set after
+		auditService,
+		tenantContextSetter,
+	)
 	executionService := service.NewExecutionService(executionRepo, workflowExecutor, tenantContextSetter)
 	workflowService := service.NewWorkflowService(
 		workflowRepo,
@@ -93,16 +102,22 @@ func main() {
 		auditService,
 		tenantContextSetter,
 	)
+	metricService := service.NewMetricService(
+		metricRepo,
+		metricDefRepo,
+		alertRuleService,
+		tenantContextSetter,
+	)
 
 	// Driving Adapters (Primary/HTTP)
 	workflowHandler := httpAdapter.NewWorkflowHandler(workflowService)
 	executionHandler := httpAdapter.NewExecutionHandler(executionService)
 	alertHandler := httpAdapter.NewAlertHandler(alertService)
 	auditHandler := httpAdapter.NewAuditHandler(auditService)
+	metricHandler := httpAdapter.NewMetricHandler(metricService)
 
 	// Legacy handlers (not yet migrated to hexagonal)
 	alertRuleHandler := alertrule.NewHandler(pool)
-	metricsHandler := metrics.NewHandler(pool)
 
 	// ============================================================================
 	// MIDDLEWARE
@@ -181,8 +196,8 @@ func main() {
 			// Alert rule routes (legacy - to be migrated)
 			r.Mount("/alert-rules", alertRuleHandler.Routes())
 
-			// Metrics routes (legacy - to be migrated)
-			r.Mount("/metrics", metricsHandler.Routes())
+			// Metrics routes (hexagonal)
+			r.Mount("/metrics", metricHandler.Routes())
 		})
 	})
 

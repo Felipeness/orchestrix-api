@@ -2,6 +2,7 @@ package port
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/orchestrix/orchestrix-api/internal/core/domain"
@@ -57,6 +58,27 @@ type AuditService interface {
 	List(ctx context.Context, tenantID uuid.UUID, page, limit int) (*AuditListResult, error)
 	GetByID(ctx context.Context, id uuid.UUID) (*domain.AuditLog, error)
 	Log(ctx context.Context, log *domain.AuditLog) error
+}
+
+// MetricService defines the primary port for metrics operations
+type MetricService interface {
+	// Ingestion
+	Ingest(ctx context.Context, input IngestMetricInput) error
+	IngestBatch(ctx context.Context, input IngestMetricBatchInput) (*IngestBatchResult, error)
+
+	// Queries
+	Query(ctx context.Context, query domain.MetricQuery) (*MetricQueryResult, error)
+	GetLatest(ctx context.Context, tenantID uuid.UUID, name string, labels map[string]string) (*domain.Metric, error)
+	GetAggregate(ctx context.Context, query domain.MetricQuery) (*domain.MetricAggregate, error)
+	GetSeries(ctx context.Context, query domain.MetricQuery, bucketSize time.Duration) ([]*domain.TimeBucket, error)
+	ListNames(ctx context.Context, tenantID uuid.UUID, prefix string) ([]string, error)
+
+	// Metric Definitions (metadata)
+	ListDefinitions(ctx context.Context, tenantID uuid.UUID, page, limit int) (*MetricDefinitionListResult, error)
+	GetDefinition(ctx context.Context, tenantID uuid.UUID, name string) (*domain.MetricDefinition, error)
+	CreateDefinition(ctx context.Context, input CreateMetricDefinitionInput) (*domain.MetricDefinition, error)
+	UpdateDefinition(ctx context.Context, tenantID uuid.UUID, name string, input UpdateMetricDefinitionInput) (*domain.MetricDefinition, error)
+	DeleteDefinition(ctx context.Context, tenantID uuid.UUID, name string) error
 }
 
 // ============================================================================
@@ -163,4 +185,62 @@ type AuditListResult struct {
 	Total int64
 	Page  int
 	Limit int
+}
+
+// Metric DTOs
+
+type IngestMetricInput struct {
+	TenantID  uuid.UUID
+	Name      string
+	Value     float64
+	Labels    map[string]string
+	Source    *string
+	Timestamp *time.Time
+}
+
+type IngestMetricBatchInput struct {
+	TenantID uuid.UUID
+	Metrics  []IngestMetricInput
+}
+
+type IngestBatchResult struct {
+	Ingested int
+	Failed   int
+	Errors   []string
+}
+
+type MetricQueryResult struct {
+	Metrics []*domain.Metric
+	Total   int64
+	Page    int
+	Limit   int
+}
+
+type MetricDefinitionListResult struct {
+	Definitions []*domain.MetricDefinition
+	Total       int64
+	Page        int
+	Limit       int
+}
+
+type CreateMetricDefinitionInput struct {
+	TenantID       uuid.UUID
+	Name           string
+	DisplayName    *string
+	Description    *string
+	Unit           *string
+	Type           domain.MetricType
+	Aggregation    domain.AggregationType
+	AlertThreshold *domain.AlertThreshold
+	RetentionDays  int
+}
+
+type UpdateMetricDefinitionInput struct {
+	DisplayName    *string
+	Description    *string
+	Unit           *string
+	Type           *domain.MetricType
+	Aggregation    *domain.AggregationType
+	AlertThreshold *domain.AlertThreshold
+	RetentionDays  *int
 }

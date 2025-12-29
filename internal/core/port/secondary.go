@@ -2,6 +2,7 @@ package port
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/orchestrix/orchestrix-api/internal/core/domain"
@@ -62,6 +63,37 @@ type AuditRepository interface {
 	FindByTenant(ctx context.Context, tenantID uuid.UUID, limit, offset int) ([]*domain.AuditLog, error)
 	CountByTenant(ctx context.Context, tenantID uuid.UUID) (int64, error)
 	Save(ctx context.Context, log *domain.AuditLog) error
+}
+
+// MetricRepository defines the interface for metrics persistence (TimescaleDB)
+type MetricRepository interface {
+	// Single metric operations
+	Save(ctx context.Context, metric *domain.Metric) error
+
+	// Batch operations (high-throughput with pgx CopyFrom)
+	SaveBatch(ctx context.Context, metrics []*domain.Metric) (int, error)
+
+	// Query operations
+	FindByQuery(ctx context.Context, query domain.MetricQuery) ([]*domain.Metric, error)
+	CountByQuery(ctx context.Context, query domain.MetricQuery) (int64, error)
+	FindLatest(ctx context.Context, tenantID uuid.UUID, name string, labels map[string]string) (*domain.Metric, error)
+
+	// Aggregation operations
+	GetAggregate(ctx context.Context, query domain.MetricQuery) (*domain.MetricAggregate, error)
+	GetSeries(ctx context.Context, query domain.MetricQuery, bucketSize time.Duration) ([]*domain.TimeBucket, error)
+
+	// Metadata operations
+	ListNames(ctx context.Context, tenantID uuid.UUID, prefix string) ([]string, error)
+}
+
+// MetricDefinitionRepository defines the interface for metric definitions persistence
+type MetricDefinitionRepository interface {
+	FindByName(ctx context.Context, tenantID uuid.UUID, name string) (*domain.MetricDefinition, error)
+	FindByTenant(ctx context.Context, tenantID uuid.UUID, limit, offset int) ([]*domain.MetricDefinition, error)
+	CountByTenant(ctx context.Context, tenantID uuid.UUID) (int64, error)
+	Save(ctx context.Context, def *domain.MetricDefinition) error
+	Update(ctx context.Context, def *domain.MetricDefinition) error
+	Delete(ctx context.Context, tenantID uuid.UUID, name string) error
 }
 
 // WorkflowExecutor defines the interface for executing workflows via Temporal

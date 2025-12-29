@@ -108,6 +108,32 @@ type MetricDefinition struct {
 	AlertThreshold []byte    `db:"alert_threshold" json:"alert_threshold"`
 	CreatedAt      time.Time `db:"created_at" json:"created_at"`
 	UpdatedAt      time.Time `db:"updated_at" json:"updated_at"`
+	RetentionDays  *int32    `db:"retention_days" json:"retention_days"`
+}
+
+type MetricsDaily struct {
+	TenantID uuid.UUID   `db:"tenant_id" json:"tenant_id"`
+	Name     string      `db:"name" json:"name"`
+	Bucket   interface{} `db:"bucket" json:"bucket"`
+	Count    int64       `db:"count" json:"count"`
+	AvgValue float64     `db:"avg_value" json:"avg_value"`
+	MinValue interface{} `db:"min_value" json:"min_value"`
+	MaxValue interface{} `db:"max_value" json:"max_value"`
+	SumValue int64       `db:"sum_value" json:"sum_value"`
+}
+
+type MetricsHourly struct {
+	TenantID uuid.UUID   `db:"tenant_id" json:"tenant_id"`
+	Name     string      `db:"name" json:"name"`
+	Bucket   interface{} `db:"bucket" json:"bucket"`
+	Count    int64       `db:"count" json:"count"`
+	AvgValue float64     `db:"avg_value" json:"avg_value"`
+	MinValue interface{} `db:"min_value" json:"min_value"`
+	MaxValue interface{} `db:"max_value" json:"max_value"`
+	SumValue int64       `db:"sum_value" json:"sum_value"`
+	P50      interface{} `db:"p50" json:"p50"`
+	P95      interface{} `db:"p95" json:"p95"`
+	P99      interface{} `db:"p99" json:"p99"`
 }
 
 type Tenant struct {

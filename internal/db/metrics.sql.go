@@ -10,20 +10,52 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countMetricDefinitions = `-- name: CountMetricDefinitions :one
+SELECT COUNT(*) FROM metric_definitions
+WHERE tenant_id = $1
+`
+
+func (q *Queries) CountMetricDefinitions(ctx context.Context, tenantID uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countMetricDefinitions, tenantID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countMetrics = `-- name: CountMetrics :one
+SELECT COUNT(*) FROM metrics
+WHERE tenant_id = $1
+    AND name = $2
+    AND timestamp >= $3
+    AND timestamp <= $4
+`
+
+type CountMetricsParams struct {
+	TenantID    uuid.UUID `db:"tenant_id" json:"tenant_id"`
+	Name        string    `db:"name" json:"name"`
+	Timestamp   time.Time `db:"timestamp" json:"timestamp"`
+	Timestamp_2 time.Time `db:"timestamp_2" json:"timestamp_2"`
+}
+
+func (q *Queries) CountMetrics(ctx context.Context, arg CountMetricsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countMetrics,
+		arg.TenantID,
+		arg.Name,
+		arg.Timestamp,
+		arg.Timestamp_2,
+	)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createMetricDefinition = `-- name: CreateMetricDefinition :one
-INSERT INTO metric_definitions (tenant_id, name, display_name, description, unit, type, aggregation, alert_threshold)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-ON CONFLICT (tenant_id, name)
-DO UPDATE SET
-    display_name = EXCLUDED.display_name,
-    description = EXCLUDED.description,
-    unit = EXCLUDED.unit,
-    type = EXCLUDED.type,
-    aggregation = EXCLUDED.aggregation,
-    alert_threshold = EXCLUDED.alert_threshold
-RETURNING id, tenant_id, name, display_name, description, unit, type, aggregation, alert_threshold, created_at, updated_at
+INSERT INTO metric_definitions (tenant_id, name, display_name, description, unit, type, aggregation, alert_threshold, retention_days)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+RETURNING id, tenant_id, name, display_name, description, unit, type, aggregation, alert_threshold, created_at, updated_at, retention_days
 `
 
 type CreateMetricDefinitionParams struct {
@@ -35,6 +67,7 @@ type CreateMetricDefinitionParams struct {
 	Type           string    `db:"type" json:"type"`
 	Aggregation    *string   `db:"aggregation" json:"aggregation"`
 	AlertThreshold []byte    `db:"alert_threshold" json:"alert_threshold"`
+	RetentionDays  *int32    `db:"retention_days" json:"retention_days"`
 }
 
 // Metric Definitions
@@ -48,6 +81,7 @@ func (q *Queries) CreateMetricDefinition(ctx context.Context, arg CreateMetricDe
 		arg.Type,
 		arg.Aggregation,
 		arg.AlertThreshold,
+		arg.RetentionDays,
 	)
 	var i MetricDefinition
 	err := row.Scan(
@@ -62,6 +96,7 @@ func (q *Queries) CreateMetricDefinition(ctx context.Context, arg CreateMetricDe
 		&i.AlertThreshold,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.RetentionDays,
 	)
 	return i, err
 }
@@ -125,7 +160,7 @@ func (q *Queries) GetLatestMetric(ctx context.Context, arg GetLatestMetricParams
 }
 
 const getMetricDefinition = `-- name: GetMetricDefinition :one
-SELECT id, tenant_id, name, display_name, description, unit, type, aggregation, alert_threshold, created_at, updated_at FROM metric_definitions
+SELECT id, tenant_id, name, display_name, description, unit, type, aggregation, alert_threshold, created_at, updated_at, retention_days FROM metric_definitions
 WHERE tenant_id = $1 AND name = $2
 `
 
@@ -149,6 +184,7 @@ func (q *Queries) GetMetricDefinition(ctx context.Context, arg GetMetricDefiniti
 		&i.AlertThreshold,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.RetentionDays,
 	)
 	return i, err
 }
@@ -179,6 +215,39 @@ func (q *Queries) GetMetricNames(ctx context.Context, tenantID uuid.UUID) ([]str
 	return items, nil
 }
 
+const getMetricNamesWithPrefix = `-- name: GetMetricNamesWithPrefix :many
+SELECT DISTINCT name FROM metrics
+WHERE tenant_id = $1
+    AND name LIKE $2 || '%'
+ORDER BY name
+LIMIT 100
+`
+
+type GetMetricNamesWithPrefixParams struct {
+	TenantID uuid.UUID `db:"tenant_id" json:"tenant_id"`
+	Column2  *string   `db:"column_2" json:"column_2"`
+}
+
+func (q *Queries) GetMetricNamesWithPrefix(ctx context.Context, arg GetMetricNamesWithPrefixParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, getMetricNamesWithPrefix, arg.TenantID, arg.Column2)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		items = append(items, name)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getMetrics = `-- name: GetMetrics :many
 SELECT id, tenant_id, name, value, labels, source, timestamp, created_at FROM metrics
 WHERE tenant_id = $1
@@ -186,7 +255,7 @@ WHERE tenant_id = $1
     AND timestamp >= $3
     AND timestamp <= $4
 ORDER BY timestamp DESC
-LIMIT $5
+LIMIT $5 OFFSET $6
 `
 
 type GetMetricsParams struct {
@@ -195,6 +264,7 @@ type GetMetricsParams struct {
 	Timestamp   time.Time `db:"timestamp" json:"timestamp"`
 	Timestamp_2 time.Time `db:"timestamp_2" json:"timestamp_2"`
 	Limit       int32     `db:"limit" json:"limit"`
+	Offset      int32     `db:"offset" json:"offset"`
 }
 
 func (q *Queries) GetMetrics(ctx context.Context, arg GetMetricsParams) ([]Metric, error) {
@@ -204,6 +274,7 @@ func (q *Queries) GetMetrics(ctx context.Context, arg GetMetricsParams) ([]Metri
 		arg.Timestamp,
 		arg.Timestamp_2,
 		arg.Limit,
+		arg.Offset,
 	)
 	if err != nil {
 		return nil, err
@@ -279,6 +350,62 @@ func (q *Queries) GetMetricsAggregate(ctx context.Context, arg GetMetricsAggrega
 	return i, err
 }
 
+const getMetricsAggregateWithPercentiles = `-- name: GetMetricsAggregateWithPercentiles :one
+SELECT
+    COUNT(*) as count,
+    AVG(value) as avg_value,
+    MIN(value) as min_value,
+    MAX(value) as max_value,
+    SUM(value) as sum_value,
+    approx_percentile(0.50, percentile_agg(value)) as p50,
+    approx_percentile(0.95, percentile_agg(value)) as p95,
+    approx_percentile(0.99, percentile_agg(value)) as p99
+FROM metrics
+WHERE tenant_id = $1
+    AND name = $2
+    AND timestamp >= $3
+    AND timestamp <= $4
+`
+
+type GetMetricsAggregateWithPercentilesParams struct {
+	TenantID    uuid.UUID `db:"tenant_id" json:"tenant_id"`
+	Name        string    `db:"name" json:"name"`
+	Timestamp   time.Time `db:"timestamp" json:"timestamp"`
+	Timestamp_2 time.Time `db:"timestamp_2" json:"timestamp_2"`
+}
+
+type GetMetricsAggregateWithPercentilesRow struct {
+	Count    int64       `db:"count" json:"count"`
+	AvgValue float64     `db:"avg_value" json:"avg_value"`
+	MinValue interface{} `db:"min_value" json:"min_value"`
+	MaxValue interface{} `db:"max_value" json:"max_value"`
+	SumValue int64       `db:"sum_value" json:"sum_value"`
+	P50      interface{} `db:"p50" json:"p50"`
+	P95      interface{} `db:"p95" json:"p95"`
+	P99      interface{} `db:"p99" json:"p99"`
+}
+
+func (q *Queries) GetMetricsAggregateWithPercentiles(ctx context.Context, arg GetMetricsAggregateWithPercentilesParams) (GetMetricsAggregateWithPercentilesRow, error) {
+	row := q.db.QueryRow(ctx, getMetricsAggregateWithPercentiles,
+		arg.TenantID,
+		arg.Name,
+		arg.Timestamp,
+		arg.Timestamp_2,
+	)
+	var i GetMetricsAggregateWithPercentilesRow
+	err := row.Scan(
+		&i.Count,
+		&i.AvgValue,
+		&i.MinValue,
+		&i.MaxValue,
+		&i.SumValue,
+		&i.P50,
+		&i.P95,
+		&i.P99,
+	)
+	return i, err
+}
+
 const getMetricsByLabels = `-- name: GetMetricsByLabels :many
 SELECT id, tenant_id, name, value, labels, source, timestamp, created_at FROM metrics
 WHERE tenant_id = $1
@@ -324,6 +451,249 @@ func (q *Queries) GetMetricsByLabels(ctx context.Context, arg GetMetricsByLabels
 			&i.Source,
 			&i.Timestamp,
 			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getMetricsDaily = `-- name: GetMetricsDaily :many
+SELECT tenant_id, name, bucket, count, avg_value, min_value, max_value, sum_value FROM metrics_daily
+WHERE tenant_id = $1
+    AND name = $2
+    AND bucket >= $3
+    AND bucket <= $4
+ORDER BY bucket DESC
+`
+
+type GetMetricsDailyParams struct {
+	TenantID uuid.UUID   `db:"tenant_id" json:"tenant_id"`
+	Name     string      `db:"name" json:"name"`
+	Bucket   interface{} `db:"bucket" json:"bucket"`
+	Bucket_2 interface{} `db:"bucket_2" json:"bucket_2"`
+}
+
+// Daily Pre-aggregated Data (from continuous aggregate)
+func (q *Queries) GetMetricsDaily(ctx context.Context, arg GetMetricsDailyParams) ([]MetricsDaily, error) {
+	rows, err := q.db.Query(ctx, getMetricsDaily,
+		arg.TenantID,
+		arg.Name,
+		arg.Bucket,
+		arg.Bucket_2,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []MetricsDaily{}
+	for rows.Next() {
+		var i MetricsDaily
+		if err := rows.Scan(
+			&i.TenantID,
+			&i.Name,
+			&i.Bucket,
+			&i.Count,
+			&i.AvgValue,
+			&i.MinValue,
+			&i.MaxValue,
+			&i.SumValue,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getMetricsHourly = `-- name: GetMetricsHourly :many
+SELECT tenant_id, name, bucket, count, avg_value, min_value, max_value, sum_value, p50, p95, p99 FROM metrics_hourly
+WHERE tenant_id = $1
+    AND name = $2
+    AND bucket >= $3
+    AND bucket <= $4
+ORDER BY bucket DESC
+`
+
+type GetMetricsHourlyParams struct {
+	TenantID uuid.UUID   `db:"tenant_id" json:"tenant_id"`
+	Name     string      `db:"name" json:"name"`
+	Bucket   interface{} `db:"bucket" json:"bucket"`
+	Bucket_2 interface{} `db:"bucket_2" json:"bucket_2"`
+}
+
+// Hourly Pre-aggregated Data (from continuous aggregate)
+func (q *Queries) GetMetricsHourly(ctx context.Context, arg GetMetricsHourlyParams) ([]MetricsHourly, error) {
+	rows, err := q.db.Query(ctx, getMetricsHourly,
+		arg.TenantID,
+		arg.Name,
+		arg.Bucket,
+		arg.Bucket_2,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []MetricsHourly{}
+	for rows.Next() {
+		var i MetricsHourly
+		if err := rows.Scan(
+			&i.TenantID,
+			&i.Name,
+			&i.Bucket,
+			&i.Count,
+			&i.AvgValue,
+			&i.MinValue,
+			&i.MaxValue,
+			&i.SumValue,
+			&i.P50,
+			&i.P95,
+			&i.P99,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getMetricsSeries = `-- name: GetMetricsSeries :many
+SELECT
+    time_bucket($1::interval, timestamp) as bucket,
+    COUNT(*) as count,
+    AVG(value) as avg_value,
+    MIN(value) as min_value,
+    MAX(value) as max_value,
+    SUM(value) as sum_value
+FROM metrics
+WHERE tenant_id = $2
+    AND name = $3
+    AND timestamp >= $4
+    AND timestamp <= $5
+GROUP BY bucket
+ORDER BY bucket DESC
+`
+
+type GetMetricsSeriesParams struct {
+	Column1     pgtype.Interval `db:"column_1" json:"column_1"`
+	TenantID    uuid.UUID       `db:"tenant_id" json:"tenant_id"`
+	Name        string          `db:"name" json:"name"`
+	Timestamp   time.Time       `db:"timestamp" json:"timestamp"`
+	Timestamp_2 time.Time       `db:"timestamp_2" json:"timestamp_2"`
+}
+
+type GetMetricsSeriesRow struct {
+	Bucket   interface{} `db:"bucket" json:"bucket"`
+	Count    int64       `db:"count" json:"count"`
+	AvgValue float64     `db:"avg_value" json:"avg_value"`
+	MinValue interface{} `db:"min_value" json:"min_value"`
+	MaxValue interface{} `db:"max_value" json:"max_value"`
+	SumValue int64       `db:"sum_value" json:"sum_value"`
+}
+
+// TimescaleDB Time Bucket Queries
+func (q *Queries) GetMetricsSeries(ctx context.Context, arg GetMetricsSeriesParams) ([]GetMetricsSeriesRow, error) {
+	rows, err := q.db.Query(ctx, getMetricsSeries,
+		arg.Column1,
+		arg.TenantID,
+		arg.Name,
+		arg.Timestamp,
+		arg.Timestamp_2,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetMetricsSeriesRow{}
+	for rows.Next() {
+		var i GetMetricsSeriesRow
+		if err := rows.Scan(
+			&i.Bucket,
+			&i.Count,
+			&i.AvgValue,
+			&i.MinValue,
+			&i.MaxValue,
+			&i.SumValue,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getMetricsSeriesWithLabels = `-- name: GetMetricsSeriesWithLabels :many
+SELECT
+    time_bucket($1::interval, timestamp) as bucket,
+    COUNT(*) as count,
+    AVG(value) as avg_value,
+    MIN(value) as min_value,
+    MAX(value) as max_value,
+    SUM(value) as sum_value
+FROM metrics
+WHERE tenant_id = $2
+    AND name = $3
+    AND labels @> $4
+    AND timestamp >= $5
+    AND timestamp <= $6
+GROUP BY bucket
+ORDER BY bucket DESC
+`
+
+type GetMetricsSeriesWithLabelsParams struct {
+	Column1     pgtype.Interval `db:"column_1" json:"column_1"`
+	TenantID    uuid.UUID       `db:"tenant_id" json:"tenant_id"`
+	Name        string          `db:"name" json:"name"`
+	Labels      []byte          `db:"labels" json:"labels"`
+	Timestamp   time.Time       `db:"timestamp" json:"timestamp"`
+	Timestamp_2 time.Time       `db:"timestamp_2" json:"timestamp_2"`
+}
+
+type GetMetricsSeriesWithLabelsRow struct {
+	Bucket   interface{} `db:"bucket" json:"bucket"`
+	Count    int64       `db:"count" json:"count"`
+	AvgValue float64     `db:"avg_value" json:"avg_value"`
+	MinValue interface{} `db:"min_value" json:"min_value"`
+	MaxValue interface{} `db:"max_value" json:"max_value"`
+	SumValue int64       `db:"sum_value" json:"sum_value"`
+}
+
+func (q *Queries) GetMetricsSeriesWithLabels(ctx context.Context, arg GetMetricsSeriesWithLabelsParams) ([]GetMetricsSeriesWithLabelsRow, error) {
+	rows, err := q.db.Query(ctx, getMetricsSeriesWithLabels,
+		arg.Column1,
+		arg.TenantID,
+		arg.Name,
+		arg.Labels,
+		arg.Timestamp,
+		arg.Timestamp_2,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetMetricsSeriesWithLabelsRow{}
+	for rows.Next() {
+		var i GetMetricsSeriesWithLabelsRow
+		if err := rows.Scan(
+			&i.Bucket,
+			&i.Count,
+			&i.AvgValue,
+			&i.MinValue,
+			&i.MaxValue,
+			&i.SumValue,
 		); err != nil {
 			return nil, err
 		}
@@ -383,13 +753,20 @@ type InsertMetricsBatchParams struct {
 }
 
 const listMetricDefinitions = `-- name: ListMetricDefinitions :many
-SELECT id, tenant_id, name, display_name, description, unit, type, aggregation, alert_threshold, created_at, updated_at FROM metric_definitions
+SELECT id, tenant_id, name, display_name, description, unit, type, aggregation, alert_threshold, created_at, updated_at, retention_days FROM metric_definitions
 WHERE tenant_id = $1
 ORDER BY name
+LIMIT $2 OFFSET $3
 `
 
-func (q *Queries) ListMetricDefinitions(ctx context.Context, tenantID uuid.UUID) ([]MetricDefinition, error) {
-	rows, err := q.db.Query(ctx, listMetricDefinitions, tenantID)
+type ListMetricDefinitionsParams struct {
+	TenantID uuid.UUID `db:"tenant_id" json:"tenant_id"`
+	Limit    int32     `db:"limit" json:"limit"`
+	Offset   int32     `db:"offset" json:"offset"`
+}
+
+func (q *Queries) ListMetricDefinitions(ctx context.Context, arg ListMetricDefinitionsParams) ([]MetricDefinition, error) {
+	rows, err := q.db.Query(ctx, listMetricDefinitions, arg.TenantID, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}
@@ -409,6 +786,7 @@ func (q *Queries) ListMetricDefinitions(ctx context.Context, tenantID uuid.UUID)
 			&i.AlertThreshold,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.RetentionDays,
 		); err != nil {
 			return nil, err
 		}
@@ -418,4 +796,60 @@ func (q *Queries) ListMetricDefinitions(ctx context.Context, tenantID uuid.UUID)
 		return nil, err
 	}
 	return items, nil
+}
+
+const updateMetricDefinition = `-- name: UpdateMetricDefinition :one
+UPDATE metric_definitions SET
+    display_name = COALESCE($3, display_name),
+    description = COALESCE($4, description),
+    unit = COALESCE($5, unit),
+    type = COALESCE($6, type),
+    aggregation = COALESCE($7, aggregation),
+    alert_threshold = COALESCE($8, alert_threshold),
+    retention_days = COALESCE($9, retention_days),
+    updated_at = NOW()
+WHERE tenant_id = $1 AND name = $2
+RETURNING id, tenant_id, name, display_name, description, unit, type, aggregation, alert_threshold, created_at, updated_at, retention_days
+`
+
+type UpdateMetricDefinitionParams struct {
+	TenantID       uuid.UUID `db:"tenant_id" json:"tenant_id"`
+	Name           string    `db:"name" json:"name"`
+	DisplayName    *string   `db:"display_name" json:"display_name"`
+	Description    *string   `db:"description" json:"description"`
+	Unit           *string   `db:"unit" json:"unit"`
+	Type           string    `db:"type" json:"type"`
+	Aggregation    *string   `db:"aggregation" json:"aggregation"`
+	AlertThreshold []byte    `db:"alert_threshold" json:"alert_threshold"`
+	RetentionDays  *int32    `db:"retention_days" json:"retention_days"`
+}
+
+func (q *Queries) UpdateMetricDefinition(ctx context.Context, arg UpdateMetricDefinitionParams) (MetricDefinition, error) {
+	row := q.db.QueryRow(ctx, updateMetricDefinition,
+		arg.TenantID,
+		arg.Name,
+		arg.DisplayName,
+		arg.Description,
+		arg.Unit,
+		arg.Type,
+		arg.Aggregation,
+		arg.AlertThreshold,
+		arg.RetentionDays,
+	)
+	var i MetricDefinition
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Name,
+		&i.DisplayName,
+		&i.Description,
+		&i.Unit,
+		&i.Type,
+		&i.Aggregation,
+		&i.AlertThreshold,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.RetentionDays,
+	)
+	return i, err
 }

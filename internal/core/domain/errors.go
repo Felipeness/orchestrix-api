@@ -30,6 +30,17 @@ var (
 	// Audit errors
 	ErrAuditLogNotFound = errors.New("audit log not found")
 
+	// Metric errors
+	ErrMetricNotFound          = errors.New("metric not found")
+	ErrInvalidMetricQuery      = errors.New("invalid metric query")
+	ErrInvalidMetricName       = errors.New("metric name is required")
+	ErrInvalidTimeRange        = errors.New("start time must be before end time")
+	ErrMetricDefinitionNotFound = errors.New("metric definition not found")
+	ErrMetricDefinitionExists  = errors.New("metric definition already exists")
+	ErrInvalidMetricType       = errors.New("invalid metric type")
+	ErrInvalidAggregationType  = errors.New("invalid aggregation type")
+	ErrBatchTooLarge           = errors.New("batch size exceeds maximum limit")
+
 	// General errors
 	ErrNotFound     = errors.New("not found")
 	ErrUnauthorized = errors.New("unauthorized")
