@@ -13,15 +13,24 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.temporal.io/sdk/client"
 
-	"github.com/orchestrix/orchestrix-api/internal/alert"
-	"github.com/orchestrix/orchestrix-api/internal/alertrule"
-	"github.com/orchestrix/orchestrix-api/internal/audit"
+	// Driving adapters (HTTP)
+	httpAdapter "github.com/orchestrix/orchestrix-api/internal/adapter/driving/http"
+
+	// Driven adapters (Infrastructure)
+	"github.com/orchestrix/orchestrix-api/internal/adapter/driven/postgres"
+	temporalAdapter "github.com/orchestrix/orchestrix-api/internal/adapter/driven/temporal"
+
+	// Core services
+	"github.com/orchestrix/orchestrix-api/internal/core/service"
+
+	// Auth (middleware)
 	"github.com/orchestrix/orchestrix-api/internal/auth"
-	"github.com/orchestrix/orchestrix-api/internal/execution"
+
+	// Legacy handlers (to be migrated)
+	"github.com/orchestrix/orchestrix-api/internal/alertrule"
 	"github.com/orchestrix/orchestrix-api/internal/metrics"
-	"github.com/orchestrix/orchestrix-api/internal/workflow"
-	"github.com/orchestrix/orchestrix-api/pkg/temporal"
 )
 
 func main() {
@@ -49,7 +58,56 @@ func main() {
 	}
 	slog.Info("database connected")
 
-	// Auth middleware
+	// Temporal client
+	temporalHost := getEnv("TEMPORAL_HOST", "localhost:7233")
+	temporalClient, err := client.Dial(client.Options{
+		HostPort: temporalHost,
+	})
+	if err != nil {
+		slog.Error("failed to connect to temporal", "error", err)
+		os.Exit(1)
+	}
+	defer temporalClient.Close()
+	slog.Info("temporal connected", "host", temporalHost)
+
+	// ============================================================================
+	// DEPENDENCY INJECTION - Hexagonal Architecture
+	// ============================================================================
+
+	// Driven Adapters (Secondary/Infrastructure)
+	tenantContextSetter := postgres.NewTenantContextSetter(pool)
+	workflowRepo := postgres.NewWorkflowRepository(pool)
+	executionRepo := postgres.NewExecutionRepository(pool)
+	alertRepo := postgres.NewAlertRepository(pool)
+	auditRepo := postgres.NewAuditRepository(pool)
+	workflowExecutor := temporalAdapter.NewWorkflowExecutor(temporalClient)
+
+	// Core Services (Application Layer)
+	auditService := service.NewAuditService(auditRepo, tenantContextSetter)
+	alertService := service.NewAlertService(alertRepo, auditService, tenantContextSetter)
+	executionService := service.NewExecutionService(executionRepo, workflowExecutor, tenantContextSetter)
+	workflowService := service.NewWorkflowService(
+		workflowRepo,
+		executionRepo,
+		workflowExecutor,
+		auditService,
+		tenantContextSetter,
+	)
+
+	// Driving Adapters (Primary/HTTP)
+	workflowHandler := httpAdapter.NewWorkflowHandler(workflowService)
+	executionHandler := httpAdapter.NewExecutionHandler(executionService)
+	alertHandler := httpAdapter.NewAlertHandler(alertService)
+	auditHandler := httpAdapter.NewAuditHandler(auditService)
+
+	// Legacy handlers (not yet migrated to hexagonal)
+	alertRuleHandler := alertrule.NewHandler(pool)
+	metricsHandler := metrics.NewHandler(pool)
+
+	// ============================================================================
+	// MIDDLEWARE
+	// ============================================================================
+
 	authMiddleware := auth.NewMiddleware(auth.Config{
 		KeycloakURL: getEnv("KEYCLOAK_URL", "http://localhost:8180"),
 		Realm:       getEnv("KEYCLOAK_REALM", "orchestrix"),
@@ -57,16 +115,11 @@ func main() {
 		SkipPaths:   []string{"/health"},
 	})
 
-	// Tenant middleware
 	tenantMiddleware := auth.NewTenantMiddleware(pool)
 
-	// Handlers
-	workflowHandler := workflow.NewHandler(pool)
-	executionHandler := execution.NewHandler(pool)
-	alertHandler := alert.NewHandler(pool)
-	alertRuleHandler := alertrule.NewHandler(pool)
-	auditHandler := audit.NewHandler(pool)
-	metricsHandler := metrics.NewHandler(pool)
+	// ============================================================================
+	// ROUTER
+	// ============================================================================
 
 	r := chi.NewRouter()
 
@@ -113,27 +166,30 @@ func main() {
 			r.Use(authMiddleware.Handler)
 			r.Use(tenantMiddleware.Handler)
 
-			// Workflow routes
+			// Workflow routes (hexagonal)
 			r.Mount("/workflows", workflowHandler.Routes())
 
-			// Execution routes
+			// Execution routes (hexagonal)
 			r.Mount("/executions", executionHandler.Routes())
 
-			// Alert routes
+			// Alert routes (hexagonal)
 			r.Mount("/alerts", alertHandler.Routes())
 
-			// Alert rule routes (auto-remediation)
-			r.Mount("/alert-rules", alertRuleHandler.Routes())
-
-			// Audit log routes
+			// Audit log routes (hexagonal)
 			r.Mount("/audit-logs", auditHandler.Routes())
 
-			// Metrics routes (observability)
+			// Alert rule routes (legacy - to be migrated)
+			r.Mount("/alert-rules", alertRuleHandler.Routes())
+
+			// Metrics routes (legacy - to be migrated)
 			r.Mount("/metrics", metricsHandler.Routes())
 		})
 	})
 
-	// Server setup
+	// ============================================================================
+	// SERVER
+	// ============================================================================
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
@@ -163,8 +219,6 @@ func main() {
 	slog.Info("shutting down server...")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-
-	temporal.Close()
 
 	if err := srv.Shutdown(ctx); err != nil {
 		slog.Error("server forced to shutdown", "error", err)
