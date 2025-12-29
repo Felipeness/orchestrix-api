@@ -44,38 +44,44 @@ Orchestrix é uma plataforma AIOps completa que **substitui Grafana + Datadog + 
 | Workflows | Temporal | Durable execution |
 | Auth | Keycloak | Identity, multi-tenant |
 
-## Project Structure
+## Project Structure (Hexagonal Architecture)
 
 ```
 orchestrix-api/
 ├── cmd/
-│   ├── api/              # HTTP API server
-│   └── worker/           # Temporal worker
+│   ├── api/                          # HTTP API server
+│   └── worker/                       # Temporal worker
 ├── internal/
-│   ├── activity/         # Temporal activities
-│   ├── alert/            # Alert management
-│   ├── alertrule/        # Alert rules & evaluation
-│   ├── api/              # HTTP handlers
-│   ├── audit/            # Audit trail
-│   ├── auth/             # Keycloak middleware
-│   ├── db/               # sqlc generated code
-│   ├── execution/        # Workflow executions
-│   ├── metrics/          # Metrics ingestion (planned)
-│   ├── tenant/           # Multi-tenancy (RLS)
-│   └── workflow/         # Workflow management
+│   ├── adapter/
+│   │   ├── driven/                   # Secondary adapters (outbound)
+│   │   │   ├── postgres/             # Database repositories
+│   │   │   └── temporal/             # Workflow execution
+│   │   └── driving/                  # Primary adapters (inbound)
+│   │       └── http/                 # HTTP handlers
+│   ├── core/
+│   │   ├── domain/                   # Domain models & errors
+│   │   ├── port/                     # Interfaces (ports)
+│   │   └── service/                  # Business logic
+│   ├── auth/                         # Keycloak middleware
+│   └── db/                           # sqlc generated code
 ├── pkg/
-│   ├── temporal/         # Temporal client utilities
-│   └── database/         # Database utilities
+│   ├── apperror/                     # Centralized error handling
+│   ├── validation/                   # Input validation utilities
+│   ├── observability/                # Logging, metrics, tracing
+│   ├── temporal/                     # Temporal client utilities
+│   └── database/                     # Database utilities
+├── api/openapi/v1/                   # OpenAPI specification
 ├── sql/
-│   ├── migrations/       # Database migrations
-│   └── queries/          # sqlc query definitions
+│   ├── migrations/                   # Database migrations
+│   └── queries/                      # sqlc query definitions
 └── keycloak/
-    └── realm-*.json      # Keycloak realm config
+    └── realm-*.json                  # Keycloak realm config
 ```
 
 ## Current Status
 
 ### Implemented
+- [x] **Hexagonal Architecture** - Ports & Adapters pattern
 - [x] Multi-tenant authentication (Keycloak)
 - [x] Workflow CRUD operations
 - [x] Workflow execution via Temporal
@@ -84,7 +90,12 @@ orchestrix-api/
 - [x] Alert triggering from rules
 - [x] Auto-remediation via workflows
 - [x] Audit logging
-- [x] OpenAPI documentation
+- [x] OpenAPI 3.1 documentation
+- [x] **Centralized error handling** (pkg/apperror)
+- [x] **Input validation** (pkg/validation)
+- [x] **Observability package** (pkg/observability)
+- [x] Unit tests for services
+- [x] Integration tests for repositories
 
 ### In Progress
 - [ ] Metrics ingestion API (Prometheus-compatible)
