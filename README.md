@@ -38,7 +38,7 @@ Orchestrix é uma plataforma AIOps completa que **substitui Grafana + Datadog + 
 | Language | Go 1.22+ | Performance, concurrency |
 | HTTP | Chi router | Lightweight, composable |
 | Database | PostgreSQL 16 | Metadata, configs |
-| Time-series | TimescaleDB | Metrics storage (planned) |
+| Time-series | TimescaleDB | Metrics storage ✅ |
 | Logs | ClickHouse | Log aggregation (planned) |
 | ORM | sqlc | Type-safe queries |
 | Workflows | Temporal | Durable execution |
@@ -98,8 +98,8 @@ orchestrix-api/
 - [x] Integration tests for repositories
 
 ### In Progress
-- [ ] Metrics ingestion API (Prometheus-compatible)
-- [ ] TimescaleDB integration
+- [x] **Metrics ingestion API** (Custom JSON format)
+- [x] **TimescaleDB integration** (Hypertables, compression, retention)
 - [ ] Anomaly detection engine
 
 ### Planned (Phase 1-6)
@@ -156,10 +156,16 @@ Audit Logs
 ### Planned APIs
 
 ```
-Metrics (Phase 1)
-├── POST /api/v1/metrics/write         # Prometheus remote write
-├── GET  /api/v1/metrics/query         # PromQL query
-└── GET  /api/v1/metrics/labels        # Label values
+Metrics ✅
+├── POST /api/v1/metrics/ingest           # Single metric
+├── POST /api/v1/metrics/ingest/batch     # Batch (max 10k)
+├── GET  /api/v1/metrics                  # Query with filters
+├── GET  /api/v1/metrics/names            # List metric names
+├── GET  /api/v1/metrics/latest/{name}    # Latest value
+├── GET  /api/v1/metrics/aggregate/{name} # Aggregated stats
+├── GET  /api/v1/metrics/series/{name}    # Time-bucketed series
+└── Definitions CRUD                      # /api/v1/metrics/definitions
+
 
 Logs (Phase 2)
 ├── POST /api/v1/logs/ingest           # Log ingestion
