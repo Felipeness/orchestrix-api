@@ -1,0 +1,672 @@
+openapi: 3.1.0
+info:
+  title: Orchestrix Metrics API
+  description: |
+    Time-series metrics ingestion and query API for Orchestrix AIOps platform.
+    Replaces Prometheus/Datadog/Grafana with a native TimescaleDB-based solution.
+  version: 1.0.0
+  contact:
+    name: Orchestrix Team
+  license:
+    name: MIT
+
+servers:
+  - url: /api/v1
+    description: API v1
+
+security:
+  - BearerAuth: []
+
+tags:
+  - name: Ingestion
+    description: Metrics ingestion endpoints
+  - name: Query
+    description: Metrics query endpoints
+  - name: Definitions
+    description: Metric definitions (metadata) management
+
+paths:
+  /metrics/ingest:
+    post:
+      operationId: ingestMetric
+      summary: Ingest a single metric
+      tags: [Ingestion]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IngestMetricRequest'
+      responses:
+        '201':
+          description: Metric ingested successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ingested
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /metrics/ingest/batch:
+    post:
+      operationId: ingestMetricBatch
+      summary: Ingest multiple metrics (max 10,000)
+      tags: [Ingestion]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IngestBatchRequest'
+      responses:
+        '201':
+          description: Metrics ingested successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngestBatchResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /metrics:
+    get:
+      operationId: queryMetrics
+      summary: Query metrics with filters
+      tags: [Query]
+      parameters:
+        - name: name
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Metric name to query
+        - name: start
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: Start time (RFC3339)
+        - name: end
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: End time (RFC3339)
+        - name: labels
+          in: query
+          schema:
+            type: string
+          description: JSON-encoded label filters
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            maximum: 1000
+      responses:
+        '200':
+          description: Metrics retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedMetrics'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /metrics/names:
+    get:
+      operationId: listMetricNames
+      summary: List distinct metric names
+      tags: [Query]
+      parameters:
+        - name: prefix
+          in: query
+          schema:
+            type: string
+          description: Filter by name prefix
+      responses:
+        '200':
+          description: Metric names retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /metrics/latest/{name}:
+    get:
+      operationId: getLatestMetric
+      summary: Get the latest value for a metric
+      tags: [Query]
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: labels
+          in: query
+          schema:
+            type: string
+          description: JSON-encoded label filters
+      responses:
+        '200':
+          description: Latest metric value
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Metric'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /metrics/aggregate/{name}:
+    get:
+      operationId: getMetricAggregate
+      summary: Get aggregated statistics for a metric
+      tags: [Query]
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: start
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: end
+          in: query
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Aggregated statistics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/MetricAggregate'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /metrics/series/{name}:
+    get:
+      operationId: getMetricSeries
+      summary: Get time-bucketed series data
+      tags: [Query]
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: bucket
+          in: query
+          schema:
+            type: string
+            default: 5m
+          description: Bucket size (e.g., 1m, 5m, 1h, 1d)
+        - name: start
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: end
+          in: query
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Time series data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TimeBucket'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /metrics/definitions:
+    get:
+      operationId: listMetricDefinitions
+      summary: List metric definitions
+      tags: [Definitions]
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        '200':
+          description: Metric definitions retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedDefinitions'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      operationId: createMetricDefinition
+      summary: Create a metric definition
+      tags: [Definitions]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateMetricDefinitionRequest'
+      responses:
+        '201':
+          description: Definition created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/MetricDefinition'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          description: Definition already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /metrics/definitions/{name}:
+    get:
+      operationId: getMetricDefinition
+      summary: Get a metric definition by name
+      tags: [Definitions]
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Metric definition
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/MetricDefinition'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    put:
+      operationId: updateMetricDefinition
+      summary: Update a metric definition
+      tags: [Definitions]
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateMetricDefinitionRequest'
+      responses:
+        '200':
+          description: Definition updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/MetricDefinition'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    delete:
+      operationId: deleteMetricDefinition
+      summary: Delete a metric definition
+      tags: [Definitions]
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Definition deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    IngestMetricRequest:
+      type: object
+      required: [name, value]
+      properties:
+        name:
+          type: string
+          description: Metric name
+          example: cpu_usage
+        value:
+          type: number
+          format: double
+          description: Metric value
+          example: 75.5
+        labels:
+          type: object
+          additionalProperties:
+            type: string
+          description: Key-value labels
+          example:
+            host: server-1
+            region: us-east
+        source:
+          type: string
+          description: Source identifier
+          example: agent
+        timestamp:
+          type: string
+          format: date-time
+          description: Metric timestamp (defaults to now)
+
+    IngestBatchRequest:
+      type: object
+      required: [metrics]
+      properties:
+        metrics:
+          type: array
+          items:
+            $ref: '#/components/schemas/IngestMetricRequest'
+          maxItems: 10000
+
+    IngestBatchResponse:
+      type: object
+      properties:
+        ingested:
+          type: integer
+          description: Number of metrics ingested
+        failed:
+          type: integer
+          description: Number of failed metrics
+
+    Metric:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        value:
+          type: number
+          format: double
+        labels:
+          type: object
+          additionalProperties:
+            type: string
+        source:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+
+    MetricAggregate:
+      type: object
+      properties:
+        count:
+          type: integer
+          format: int64
+        average:
+          type: number
+          format: double
+        min:
+          type: number
+          format: double
+        max:
+          type: number
+          format: double
+        sum:
+          type: number
+          format: double
+        p50:
+          type: number
+          format: double
+        p95:
+          type: number
+          format: double
+        p99:
+          type: number
+          format: double
+
+    TimeBucket:
+      type: object
+      properties:
+        bucket:
+          type: string
+          format: date-time
+        count:
+          type: integer
+          format: int64
+        average:
+          type: number
+          format: double
+        min:
+          type: number
+          format: double
+        max:
+          type: number
+          format: double
+        sum:
+          type: number
+          format: double
+
+    MetricDefinition:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        display_name:
+          type: string
+        description:
+          type: string
+        unit:
+          type: string
+        type:
+          type: string
+          enum: [gauge, counter, histogram, summary]
+        aggregation:
+          type: string
+          enum: [avg, sum, min, max, last, count, p50, p95, p99]
+        alert_threshold:
+          $ref: '#/components/schemas/AlertThreshold'
+        retention_days:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    AlertThreshold:
+      type: object
+      properties:
+        warning:
+          type: number
+          format: double
+        critical:
+          type: number
+          format: double
+
+    CreateMetricDefinitionRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        display_name:
+          type: string
+        description:
+          type: string
+        unit:
+          type: string
+        type:
+          type: string
+          enum: [gauge, counter, histogram, summary]
+          default: gauge
+        aggregation:
+          type: string
+          enum: [avg, sum, min, max, last]
+          default: avg
+        alert_threshold:
+          $ref: '#/components/schemas/AlertThreshold'
+        retention_days:
+          type: integer
+          default: 30
+
+    UpdateMetricDefinitionRequest:
+      type: object
+      properties:
+        display_name:
+          type: string
+        description:
+          type: string
+        unit:
+          type: string
+        type:
+          type: string
+          enum: [gauge, counter, histogram, summary]
+        aggregation:
+          type: string
+          enum: [avg, sum, min, max, last]
+        alert_threshold:
+          $ref: '#/components/schemas/AlertThreshold'
+        retention_days:
+          type: integer
+
+    PaginatedMetrics:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Metric'
+        total:
+          type: integer
+          format: int64
+        page:
+          type: integer
+        limit:
+          type: integer
+
+    PaginatedDefinitions:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/MetricDefinition'
+        total:
+          type: integer
+          format: int64
+        page:
+          type: integer
+        limit:
+          type: integer
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
